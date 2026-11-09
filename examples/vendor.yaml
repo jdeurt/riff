@@ -1,0 +1,56 @@
+openapi: 3.0.3
+info:
+  title: Example customer vendor
+  version: '1.0'
+paths:
+  /customers/{id}:
+    get:
+      responses:
+        '200':
+          description: Customer details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Customer'
+components:
+  schemas:
+    Customer:
+      type: object
+      additionalProperties: false
+      required: [id, name, status, balance_cents]
+      properties:
+        id:
+          type: string
+          format: uuid
+          x-fixture:
+            provider: uuid
+        name:
+          type: string
+          maxLength: 100
+          x-fixture:
+            provider: full-name
+            locale: en-US
+            examples: ['', '  Ada Lovelace  ', '李明']
+            fail:
+              examples: [null, 42]
+              reason: Consumer requires a string name.
+        email:
+          type: string
+          format: email
+          nullable: true
+          x-fixture:
+            provider: email
+        status:
+          type: string
+          enum: [active, inactive]
+        balance_cents:
+          type: integer
+          minimum: 0
+          maximum: 1000000
+        tags:
+          type: array
+          maxItems: 4
+          uniqueItems: true
+          items:
+            type: string
+            enum: [trial, premium, overdue, internal]

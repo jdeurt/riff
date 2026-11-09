@@ -1,0 +1,39 @@
+openapi: 3.1.0
+info:
+  title: Vendor contract for endpoint testing
+  version: '1.0'
+paths:
+  /customers/{id}:
+    get:
+      responses:
+        '200':
+          description: Customer record
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [id, name, status]
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                    maxLength: 100
+                    x-fixture:
+                      provider: full-name
+                      examples: ['', '   ', ' Ada ']
+                      fail:
+                        examples: [null, 42]
+                        reason: Malformed vendor data must produce HTTP 502.
+                  status:
+                    type: string
+                    enum: [active, inactive]
+                    x-fixture:
+                      strategy:
+                        kind: values
+                        values: [active]
+                      fail:
+                        examples: [inactive]
+                        reason: An inactive customer must produce HTTP 409.
