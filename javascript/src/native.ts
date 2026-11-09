@@ -32,4 +32,4 @@ export function callNative<ValueT>(
 }
 
 export { default as native } from "./binding.cjs";
-export type { FactoryHandle } from "../../native/index.node";
+export type { FactoryHandle, ProviderRequest } from "../../native/index.node";

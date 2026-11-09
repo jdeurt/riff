@@ -1,4 +1,4 @@
-"""Typed metadata builders; the Rust core interprets and validates contracts."""
+"""Typed declarations for portable fixture metadata."""
 
 from __future__ import annotations
 
@@ -9,9 +9,6 @@ from pydantic import (
     ConfigDict,
     Field,
     TypeAdapter,
-    field_serializer,
-    field_validator,
-    model_validator,
 )
 from typing_extensions import Self, TypeAliasType
 
@@ -40,7 +37,7 @@ class ValuesStrategy(StrategyModel):
     """Choose a value from a nonempty explicit corpus."""
 
     kind: Literal["values"]
-    values: list[JSONValue] = Field(min_length=1)
+    values: list[JSONValue]
 
 
 class ProviderStrategy(StrategyModel):
@@ -56,7 +53,7 @@ class ChoiceStrategy(StrategyModel):
     """Choose among child strategies."""
 
     kind: Literal["one-of"]
-    strategies: list[Strategy] = Field(min_length=1)
+    strategies: list[Strategy]
 
 
 class FilterStrategy(StrategyModel):
@@ -65,12 +62,6 @@ class FilterStrategy(StrategyModel):
     kind: Literal["filter"]
     strategy: Strategy
     predicate: Schema = Field(alias="schema")
-
-    @field_validator("predicate", mode="before")
-    @classmethod
-    def validate_predicate(cls, value: object) -> JSONValue:
-        """Validate predicate JSON shape; Rust resolves and compiles the schema."""
-        return SCHEMA_ADAPTER.validate_python(value)
 
     @classmethod
     def where(cls, strategy: Strategy, *, schema: Schema) -> Self:
@@ -82,11 +73,6 @@ class FilterStrategy(StrategyModel):
                 "schema": schema,
             }
         )
-
-    @field_serializer("predicate")
-    def serialize_predicate(self, predicate: Schema) -> Schema:
-        """Preserve the predicate's declared dialect and complete schema on export."""
-        return predicate
 
 
 Strategy = TypeAliasType(
@@ -104,47 +90,11 @@ class Source(StrategyModel):
     provider: str | None = None
     locale: str = "en-US"
     options: dict[str, JSONValue] = Field(default_factory=dict)
-    examples: list[JSONValue] | None = Field(default=None, min_length=1)
+    examples: list[JSONValue] | None = None
     strategy: Strategy | None = None
-
-    @model_validator(mode="after")
-    def check_source(self) -> Self:
-        """Reject ambiguous sources and options without a provider."""
-        if self.strategy is not None and self.model_fields_set.intersection(
-            {"provider", "locale", "options", "examples"}
-        ):
-            message = "strategy cannot be combined with provider, locale, options, or examples"
-            raise ValueError(message)
-        if self.provider is None and self.model_fields_set.intersection({"locale", "options"}):
-            message = "locale and options require a provider"
-            raise ValueError(message)
-        null_fields = {
-            "provider": self.provider is None,
-            "examples": self.examples is None,
-            "strategy": self.strategy is None,
-        }
-        for name, is_null in null_fields.items():
-            if name in self.model_fields_set and is_null:
-                message = f"{name} must not be null"
-                raise ValueError(message)
-        return self
 
 
 class FailureSource(Source):
     """An explicit negative source with a consumer-facing explanation."""
 
     reason: str | None = None
-
-    @model_validator(mode="after")
-    def require_source(self) -> Self:
-        """Require data that can actually replace a field."""
-        if self.provider is None and self.examples is None and self.strategy is None:
-            message = "fail requires provider, examples, or strategy"
-            raise ValueError(message)
-        return self
-
-
-class FixtureMetadata(Source):
-    """Portable positive and negative value-generation hints."""
-
-    fail: FailureSource | None = None

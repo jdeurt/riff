@@ -3,6 +3,9 @@
 /// A schema, generation, or provider failure.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Invalid invocation arguments, independent of the schema contract.
+    #[error("{0}")]
+    Argument(String),
     /// Invalid or unsupported input contract.
     #[error("{0}")]
     Schema(String),

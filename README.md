@@ -3,60 +3,37 @@
 Schema-guided fuzz fixtures for API tests. Generate request bodies for your own
 endpoints or response bodies for code that consumes another API.
 
-Riff produces data. Your existing test runner, HTTP client, interceptor, mock
-transport, or VCR setup supplies that data to the system under test.
+Give Riff a JSON Schema or OpenAPI document, then supply the generated data through
+your existing test client, interceptor, mock transport, or VCR setup. Riff does
+not send or intercept requests.
 
-The [specification](docs/spec.md) is language-agnostic. A shared [`rust/`](rust/)
-engine powers typed [`python/`](python/) bindings through PyO3 and
-[`javascript/`](javascript/) bindings through Neon. Both provide Faker-backed
-defaults, custom providers, composable strategies, labeled success/failure cases,
-and seeded replay.
-Fixture annotations may live inline or in sidecar YAML files selected by endpoint
-and schema path. Default generation respects constraints; explicit failure
-strategies can violate them.
+Use built-in semantic providers or register custom ones. Combine strategies,
+filter candidates, declare expected failures, replay saved fixtures, and minimize
+reproducers. Successful fixtures respect the schema. Explicit failure strategies
+can violate constraints or represent schema-valid business failures.
+
+Fixture hints may live inline or in YAML sidecars selected by endpoint and schema
+path. Python and JavaScript provide typed model views while retaining the exact
+JSON payloads used by your tests.
 
 ## Guides
 
-Start with the quick start, then choose typed model annotations or a YAML sidecar.
-The endpoint guide shows how those fixtures enter real tests.
+Start with a quick start, then choose model annotations or a YAML sidecar.
 
-- [Quick start](docs/quickstart.md)
+- [Python quick start](docs/quickstart.md)
+- [JavaScript quick start and API](docs/javascript-api.md)
 - [Typed model metadata](docs/model-metadata.md)
 - [Sidecar fixture files](docs/sidecars.md)
 - [Testing your own endpoints and vendor consumers](docs/testing.md)
 - [Strategies, filtering, and minimization](docs/strategies.md)
 - [Custom providers](docs/providers.md)
-- [JSON Schema constraints](docs/json-schema.md)
+- [JSON Schema constraints and input limits](docs/json-schema.md)
 - [Publishing a clean OpenAPI spec](docs/publishing-openapi.md)
-- [Dogfooding Riff](docs/dogfooding.md)
+- [Fuzzing Riff’s input contracts](docs/input-fuzzing.md)
 - [Python API reference](docs/python-api.md)
-- [JavaScript guide and API](docs/javascript-api.md)
-- [Native architecture and builds](docs/architecture.md)
+- [Installation and development](docs/installation.md)
 - [Strict tooling](docs/tooling.md)
 - [Portable specification](docs/spec.md)
 
-## Python development
-
-Install [Rust](https://rustup.rs/), Python 3.10+, and
-[uv](https://docs.astral.sh/uv/). CI checks Python 3.10–3.14 and Node 22/24, with
-strict Rust, Python, and Oxc checks. See [native builds](docs/architecture.md) for
-source installation and platform-specific package artifacts.
-
-```sh
-cd python
-uv sync --locked
-uv run ruff check .
-uv run ruff format --check .
-uv run ty check
-uv run pytest tests examples
-uv build
-```
-
-Successful fixtures are validated at runtime and can be returned as typed models.
-Intentionally failing fixtures retain raw JSON types. Python's type checker does
-not prove schema constraints; it checks the modeled API and case distinctions.
-
-The Python implementation forbids unchecked type assertions and unconstrained
-dynamic types. External JSON/YAML is validated at input boundaries; internal code
-uses typed schema and strategy representations. Ruff enables all lint rules with
-narrow, documented exceptions; `ty` treats all diagnostics as errors.
+Python requires 3.10+; JavaScript requires Node 22.12+. Follow the
+[installation guide](docs/installation.md) to build from this repository.

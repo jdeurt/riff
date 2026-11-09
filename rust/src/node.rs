@@ -117,7 +117,6 @@ pub struct Pattern {
 
 pub struct Compilation<'a> {
     pub names: &'a BTreeSet<String>,
-    pub locales: &'a BTreeSet<String>,
 }
 
 pub fn validator(schema: &Value, dialect: Dialect) -> Result<Arc<Validator>> {
@@ -397,7 +396,7 @@ fn validate_builtin(
             "Default semantic providers require a string schema.".to_owned(),
         ));
     }
-    if !context.locales.contains(locale) {
+    if !crate::providers::LOCALES.contains(&locale) {
         return Err(Error::Schema(format!("Unsupported locale: {locale}")));
     }
     Ok(())

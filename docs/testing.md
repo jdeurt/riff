@@ -72,8 +72,6 @@ and `uv.lock` supports seeded replay; retained JSON supports replay after upgrad
 Riff does not promise exhaustive sampling, automatic scheduling, or reproduction
 from a seed across different implementation/dependency versions.
 
-The [shared-engine replay check](../python/examples/check_bindings.py) compares
-Python and JavaScript batches, full negative-case diagnostics, and custom-provider
-seeds using the same contract. After building both bindings, run it from `python/`
-with `uv run python -m examples.check_bindings`. This checks the pinned engine and
-provider contract; Faker text remains specific to each language's provider.
+
+Riff also [fuzzes its JSON Schema, OpenAPI, and sidecar inputs](input-fuzzing.md).
+Those tests run in the Rust package.

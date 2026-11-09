@@ -14,7 +14,6 @@ use crate::{Dialect, Result};
 pub struct Factory {
     node: Node,
     names: BTreeSet<String>,
-    locales: BTreeSet<String>,
 }
 
 impl Factory {
@@ -22,14 +21,10 @@ impl Factory {
     ///
     /// # Errors
     /// Returns a schema error for invalid constraints or metadata.
-    pub fn new(schema: &Value, names: BTreeSet<String>, locales: BTreeSet<String>) -> Result<Self> {
+    pub fn new(schema: &Value, names: BTreeSet<String>) -> Result<Self> {
         let normalized = crate::prepare(schema, None, None)?;
-        let node = Node::compile(
-            &normalized,
-            Dialect::default(),
-            &Compilation { names: &names, locales: &locales },
-        )?;
-        Ok(Self { node, names, locales })
+        let node = Node::compile(&normalized, Dialect::default(), &Compilation { names: &names })?;
+        Ok(Self { node, names })
     }
 
     /// Generate a complete valid batch, with no partial return on exhaustion.
@@ -41,7 +36,7 @@ impl Factory {
         options: &GenerationOptions,
         provider: &mut impl FnMut(&ProviderContext) -> Result<Value>,
     ) -> Result<Vec<Value>> {
-        let mut engine = Engine::new(options, &self.names, &self.locales, provider)?;
+        let mut engine = Engine::new(options, &self.names, provider)?;
         (0..options.count).map(|_| engine.generate(&self.node)).collect()
     }
 
@@ -54,7 +49,7 @@ impl Factory {
         options: &GenerationOptions,
         provider: &mut impl FnMut(&ProviderContext) -> Result<Value>,
     ) -> Result<Vec<Case>> {
-        let mut engine = Engine::new(options, &self.names, &self.locales, provider)?;
+        let mut engine = Engine::new(options, &self.names, provider)?;
         (0..options.count).map(|_| cases::failure(&self.node, &mut engine)).collect()
     }
 

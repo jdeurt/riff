@@ -32,7 +32,7 @@ export type Provider = (context: ProviderContext) => JSONValue;
 export interface Violation {
   /** RFC 6901 JSON Pointer; empty string denotes the root. */
   readonly path: string;
-  /** Diagnostic text; not a stable identifier across engine upgrades. */
+  /** Diagnostic text; not a stable identifier across Riff upgrades. */
   readonly message: string;
 }
 /** Schema-valid payload and an optional inferred model view. */

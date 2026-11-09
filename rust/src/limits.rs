@@ -6,8 +6,11 @@ use serde_json::Value;
 
 use crate::{Error, Result};
 
+/// Maximum nesting accepted for contract and JSON input values.
+pub const MAX_INPUT_DEPTH: usize = 128;
+
 pub fn validate_numbers(value: &Value, depth: usize) -> Result<()> {
-    if depth > 128 {
+    if depth > MAX_INPUT_DEPTH {
         return Err(Error::Schema("JSON input nesting exceeds 128 levels.".to_owned()));
     }
     match value {
@@ -18,6 +21,11 @@ pub fn validate_numbers(value: &Value, depth: usize) -> Result<()> {
             }
             let decimal =
                 BigDecimal::from_str(&text).map_err(|error| Error::Schema(error.to_string()))?;
+            if decimal.as_bigint_and_exponent().1.unsigned_abs() > 1024 {
+                return Err(Error::Schema(
+                    "Numeric decimal scale exceeds the supported limit 1024.".to_owned(),
+                ));
+            }
             let (coefficient, scale) = decimal.normalized().as_bigint_and_exponent();
             if scale.unsigned_abs() > 1024
                 || coefficient.to_str_radix(10).trim_start_matches('-').len() > 1024

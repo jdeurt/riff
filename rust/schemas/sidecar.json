@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://riff.invalid/inputs/sidecar",
+  "title": "Riff sidecar input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "const": "0.1"
+    },
+    "fields": {
+      "$ref": "#/$defs/fields"
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/operation"
+      }
+    }
+  },
+  "$defs": {
+    "fields": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^(?:/(?:[^~/]|~[01])*)*$"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/metadata"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "locale": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object"
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {}
+        },
+        "strategy": {
+          "$ref": "#/$defs/positiveStrategy"
+        },
+        "fail": {
+          "$ref": "#/$defs/failure"
+        }
+      },
+      "dependentRequired": {
+        "locale": [
+          "provider"
+        ],
+        "options": [
+          "provider"
+        ]
+      },
+      "not": {
+        "allOf": [
+          {
+            "required": [
+              "strategy"
+            ]
+          },
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "provider"
+                ]
+              },
+              {
+                "required": [
+                  "locale"
+                ]
+              },
+              {
+                "required": [
+                  "options"
+                ]
+              },
+              {
+                "required": [
+                  "examples"
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "failure": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string"
+        },
+        "locale": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object"
+        },
+        "examples": {
+          "type": "array",
+          "minItems": 1,
+          "items": {}
+        },
+        "strategy": {
+          "$ref": "#/$defs/failureStrategy"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "dependentRequired": {
+        "locale": [
+          "provider"
+        ],
+        "options": [
+          "provider"
+        ]
+      },
+      "not": {
+        "allOf": [
+          {
+            "required": [
+              "strategy"
+            ]
+          },
+          {
+            "anyOf": [
+              {
+                "required": [
+                  "provider"
+                ]
+              },
+              {
+                "required": [
+                  "locale"
+                ]
+              },
+              {
+                "required": [
+                  "options"
+                ]
+              },
+              {
+                "required": [
+                  "examples"
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "anyOf": [
+        {
+          "required": [
+            "provider"
+          ]
+        },
+        {
+          "required": [
+            "examples"
+          ]
+        },
+        {
+          "required": [
+            "strategy"
+          ]
+        }
+      ]
+    },
+    "positiveStrategy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "schema"
+            },
+            "constraints": {
+              "const": "respect"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "values"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "items": {}
+            }
+          },
+          "required": [
+            "kind",
+            "values"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "provider"
+            },
+            "name": {
+              "type": "string"
+            },
+            "locale": {
+              "type": "string"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "one-of"
+            },
+            "strategies": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/positiveStrategy"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "strategies"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "filter"
+            },
+            "schema": {
+              "$ref": "https://riff.invalid/inputs/json-schema"
+            },
+            "strategy": {
+              "$ref": "#/$defs/positiveStrategy"
+            }
+          },
+          "required": [
+            "kind",
+            "schema",
+            "strategy"
+          ]
+        }
+      ]
+    },
+    "failureStrategy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "schema"
+            },
+            "constraints": {
+              "enum": [
+                "respect",
+                "violate"
+              ]
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "values"
+            },
+            "values": {
+              "type": "array",
+              "minItems": 1,
+              "items": {}
+            }
+          },
+          "required": [
+            "kind",
+            "values"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "provider"
+            },
+            "name": {
+              "type": "string"
+            },
+            "locale": {
+              "type": "string"
+            },
+            "options": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "kind",
+            "name"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "one-of"
+            },
+            "strategies": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/failureStrategy"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "strategies"
+          ]
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "filter"
+            },
+            "schema": {
+              "$ref": "https://riff.invalid/inputs/json-schema"
+            },
+            "strategy": {
+              "$ref": "#/$defs/failureStrategy"
+            }
+          },
+          "required": [
+            "kind",
+            "schema",
+            "strategy"
+          ]
+        }
+      ]
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "fields"
+      ],
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "method": {
+          "type": "string"
+        },
+        "body": {
+          "enum": [
+            "request",
+            "response"
+          ]
+        },
+        "status": {
+          "type": "string"
+        },
+        "mediaType": {
+          "type": "string"
+        },
+        "fields": {
+          "$ref": "#/$defs/fields"
+        }
+      }
+    }
+  }
+}

@@ -49,10 +49,10 @@ class ModelFactory(Generic[ModelT]):
         max_attempts: int = 100,
     ) -> list[SuccessCase[ModelT]]:
         """Return model-typed values in positively tagged case envelopes."""
-        values = self._factory.generate(
+        cases = self._factory.success_cases(
             count=count, seed=seed, profile=profile, max_attempts=max_attempts
         )
-        return [SuccessCase(value=self._decode(value), payload=value) for value in values]
+        return [SuccessCase(value=self._decode(case.value), payload=case.payload) for case in cases]
 
     def failure_cases(
         self,

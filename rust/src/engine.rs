@@ -14,6 +14,10 @@ use crate::scalars::{self, choose};
 use crate::schema::{Dialect, prepare};
 use crate::{Error, Metadata, Result, Source, Strategy};
 
+pub const MAX_COUNT: usize = 10_000;
+pub const MAX_ATTEMPTS: usize = 100_000;
+pub const MAX_SEED_DIGITS: u16 = 1024;
+
 /// Sampling preference; every successful value still obeys the schema.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -27,14 +31,15 @@ pub enum Profile {
     Boundary,
 }
 
-/// Validated invocation options. Seed strings carry all 64 bits across bindings.
+/// Per-batch generation controls.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct GenerationOptions {
     /// Number of fixtures, capped at 10,000 per batch.
     pub count: usize,
-    /// Decimal unsigned 64-bit seed, or fresh randomness when omitted.
-    pub seed: Option<String>,
+    /// Unsigned 64-bit seed, or fresh randomness when omitted.
+    #[serde(deserialize_with = "deserialize_seed")]
+    pub seed: Option<u64>,
     /// Sampling preference.
     pub profile: Profile,
     /// Per-draw rejection limit, capped at 100,000.
@@ -49,8 +54,8 @@ impl Default for GenerationOptions {
 
 impl GenerationOptions {
     pub(crate) fn validate(&self) -> Result<()> {
-        if self.count > 10_000 || self.max_attempts == 0 || self.max_attempts > 100_000 {
-            return Err(Error::Schema(
+        if self.count > MAX_COUNT || self.max_attempts == 0 || self.max_attempts > MAX_ATTEMPTS {
+            return Err(Error::Argument(
                 "count must be 0..10000 and maxAttempts must be 1..100000.".to_owned(),
             ));
         }
@@ -71,7 +76,7 @@ pub enum ProviderKind {
 /// Fresh, isolated inputs for exactly one provider invocation.
 #[derive(Clone, Debug)]
 pub struct ProviderContext {
-    /// Dispatch used internally by host-language default adapters.
+    /// Whether this request names a semantic provider or string format.
     pub kind: ProviderKind,
     /// Portable semantic name or recognized format.
     pub name: String,
@@ -90,7 +95,7 @@ impl Serialize for ProviderContext {
         &self,
         serializer: S,
     ) -> std::result::Result<S::Ok, S::Error> {
-        let mut object = serializer.serialize_struct("ProviderContext", 7)?;
+        let mut object = serializer.serialize_struct("ProviderContext", 6)?;
         object.serialize_field("kind", &self.kind)?;
         object.serialize_field("name", &self.name)?;
         object.serialize_field("seed", &self.seed.to_string())?;
@@ -107,7 +112,6 @@ pub struct Engine<'a, F: FnMut(&ProviderContext) -> Result<Value>> {
     profile: Profile,
     remaining: usize,
     names: &'a BTreeSet<String>,
-    locales: &'a BTreeSet<String>,
     provider: &'a mut F,
 }
 
@@ -115,23 +119,16 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
     pub fn new(
         options: &GenerationOptions,
         names: &'a BTreeSet<String>,
-        locales: &'a BTreeSet<String>,
         provider: &'a mut F,
     ) -> Result<Self> {
         options.validate()?;
-        let seed = options.seed.as_ref().map_or_else(
-            || Ok(rand::rng().next_u64()),
-            |seed| {
-                seed.parse::<u64>().map_err(|error| Error::Schema(format!("Invalid seed: {error}")))
-            },
-        )?;
+        let seed = options.seed.unwrap_or_else(|| rand::rng().next_u64());
         Ok(Self {
             random: ChaCha8Rng::seed_from_u64(seed),
             max_attempts: options.max_attempts,
             profile: options.profile,
             remaining: 0,
             names,
-            locales,
             provider,
         })
     }
@@ -364,7 +361,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         }
     }
     fn compile(&self, value: &Value, dialect: Dialect) -> Result<Node> {
-        Node::compile(value, dialect, &Compilation { names: self.names, locales: self.locales })
+        Node::compile(value, dialect, &Compilation { names: self.names })
     }
     fn invoke(
         &mut self,
@@ -382,38 +379,20 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             schema: node.contract.clone(),
             options,
         };
-        let value = (self.provider)(&context)
-            .map_err(|error| Error::Provider(format!("Provider {name} failed: {error}")))?;
+        let value = if matches!(kind, ProviderKind::Provider) && self.names.contains(name) {
+            (self.provider)(&context)
+        } else {
+            crate::providers::generate(&context)
+        }
+        .map_err(|error| Error::Provider(format!("Provider {name} failed: {error}")))?;
         crate::limits::validate_numbers(&value, 0).map_err(|error| {
             Error::Provider(format!("Provider {name} returned unsupported numeric data: {error}"))
         })?;
         Ok(value)
     }
     fn string(&mut self, node: &SchemaNode) -> Result<Value> {
-        const FORMATS: &[&str] = &[
-            "email",
-            "idn-email",
-            "hostname",
-            "idn-hostname",
-            "uri",
-            "uri-reference",
-            "iri",
-            "iri-reference",
-            "uri-template",
-            "uuid",
-            "date",
-            "date-time",
-            "time",
-            "duration",
-            "ipv4",
-            "ipv6",
-            "json-pointer",
-            "relative-json-pointer",
-            "regex",
-            "color",
-        ];
         if let Some(format) = &node.data.format
-            && FORMATS.contains(&format.as_str())
+            && crate::providers::FORMATS.contains(&format.as_str())
         {
             return self.invoke(ProviderKind::Format, format, "en-US", Map::new(), node);
         }
@@ -610,4 +589,31 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         }
         Ok(format!("extra_{index}"))
     }
+}
+
+fn deserialize_seed<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<u64>, D::Error> {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    use std::str::FromStr;
+
+    let value = Value::deserialize(deserializer)?;
+    let text = match value {
+        Value::Null => return Ok(None),
+        Value::String(text) => text,
+        Value::Number(number) => number.to_string(),
+        _ => {
+            return Err(serde::de::Error::custom(
+                "seed must be an integer or decimal integer string",
+            ));
+        }
+    };
+    let digits = text.strip_prefix(['+', '-']).unwrap_or(&text);
+    if digits.len() > usize::from(MAX_SEED_DIGITS) || text.contains(['.', 'e', 'E']) {
+        return Err(serde::de::Error::custom("seed must be an integer with at most 1024 digits"));
+    }
+    let seed = BigInt::from_str(&text).map_err(serde::de::Error::custom)?;
+    let modulus = BigInt::from(1_u128 << 64);
+    u64::try_from(seed.mod_floor(&modulus)).map(Some).map_err(serde::de::Error::custom)
 }

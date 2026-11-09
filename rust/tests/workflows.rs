@@ -13,10 +13,10 @@ fn semantic_providers_drive_replayable_valid_batches_and_declared_failures() -> 
             "status": { "enum": ["active", "inactive"], "x-fixture": {"strategy": {"kind": "values", "values": ["active"]}, "fail": {"examples": ["inactive"]}} }
         }
     });
-    let factory = Factory::new(&schema, BTreeSet::from(["acme.id".to_owned()]), BTreeSet::new())?;
+    let factory = Factory::new(&schema, BTreeSet::from(["acme.id".to_owned()]))?;
     let options = GenerationOptions {
         count: 20,
-        seed: Some("18446744073709551615".to_owned()),
+        seed: Some(u64::MAX),
         profile: riff_core::Profile::Realistic,
         ..GenerationOptions::default()
     };
@@ -40,7 +40,6 @@ fn minimization_keeps_the_caller_failure_and_original_input() -> Result<()> {
     let factory = Factory::new(
         &json!({"type":"object", "required":["name"], "properties":{"name":{"type":"string","minLength":1}}}),
         BTreeSet::new(),
-        BTreeSet::new(),
     )?;
     let original = json!({"name":"prefix!suffix", "unrelated":[1,2,3]});
     let result = factory.minimize(&original, 100, true, &mut |value| {
@@ -60,7 +59,7 @@ fn extreme_numeric_exponents_fail_before_decimal_expansion() -> Result<()> {
         r#"{"type":"integer","multipleOf":1e-1000000000}"#,
     ] {
         let schema: Value = serde_json::from_str(text)?;
-        let result = Factory::new(&schema, BTreeSet::new(), BTreeSet::new());
+        let result = Factory::new(&schema, BTreeSet::new());
         assert!(
             matches!(result, Err(Error::Schema(message)) if message.contains("supported limit"))
         );
@@ -75,9 +74,8 @@ fn exclusive_singleton_ranges_use_exact_rational_indexing() -> Result<()> {
     let schema: Value = serde_json::from_str(&format!(
         r#"{{"type":"integer","exclusiveMinimum":{lower},"maximum":{upper},"multipleOf":3}}"#
     ))?;
-    let factory = Factory::new(&schema, BTreeSet::new(), BTreeSet::new())?;
-    let options =
-        GenerationOptions { count: 3, seed: Some("42".to_owned()), ..GenerationOptions::default() };
+    let factory = Factory::new(&schema, BTreeSet::new())?;
+    let options = GenerationOptions { count: 3, seed: Some(42), ..GenerationOptions::default() };
     let expected: Value = serde_json::from_str(&upper)?;
     let actual = factory
         .generate(&options, &mut |_| Err(Error::Provider("No provider is needed.".to_owned())))?;
@@ -90,7 +88,6 @@ fn provider_numbers_obey_allocation_limits_before_validation() -> Result<()> {
     let factory = Factory::new(
         &json!({"x-fixture":{"provider":"extreme"}}),
         BTreeSet::from(["extreme".to_owned()]),
-        BTreeSet::new(),
     )?;
     let options = GenerationOptions {
         profile: riff_core::Profile::Realistic,

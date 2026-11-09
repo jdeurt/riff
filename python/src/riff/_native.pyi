@@ -1,4 +1,4 @@
-"""Private typed ABI for the PyO3 extension; use riff.FixtureFactory publicly."""
+"""Private declarations; use riff.FixtureFactory publicly."""
 
 from collections.abc import Callable
 
@@ -15,28 +15,23 @@ class ProviderError(RiffError):
     """A provider raised or returned non-JSON data."""
 
 class NativeFactory:
-    """Immutable compiled Rust contract; each call owns its random state."""
+    """Immutable fixture contract supporting independent generation calls."""
 
-    def __init__(
-        self,
-        document: str,
-        names: list[str],
-        locales: list[str],
-        operation: str | None = None,
-        fixtures: str | None = None,
-    ) -> None: ...
+    def __init__(self, source: str, configuration: str) -> None: ...
     def generate(self, options: str, provider: Callable[[str], str]) -> str:
         """Return a complete JSON batch or raise a domain exception."""
-    def failure_cases(self, options: str, provider: Callable[[str], str]) -> str:
-        """Return raw case envelopes with independent validity diagnostics."""
-    def minimize(
-        self, value: str, maximum: int, preserve: bool, oracle: Callable[[str], bool]
-    ) -> str:
+    def cases(self, options: str, provider: Callable[[str], str]) -> str:
+        """Return labeled case envelopes with original payloads and diagnostics."""
+    def minimize(self, value: str, options: str, oracle: Callable[[str], bool]) -> str:
         """Retain reductions that reproduce the caller's failure."""
     def is_valid(self, value: str) -> bool:
         """Check model serialization against the original contract."""
-    def schema(self) -> str:
-        """Return the normalized schema as JSON."""
 
 def strip_metadata(document: str) -> str:
     """Remove schema-only fixture annotations from an OpenAPI copy."""
+
+def validate_metadata(metadata: str) -> None:
+    """Validate a complete positive/negative fixture annotation."""
+
+def cli(arguments: list[str]) -> tuple[str, str, int]:
+    """Return stdout, stderr, and exit code for the complete CLI workflow."""

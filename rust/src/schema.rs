@@ -91,7 +91,7 @@ impl Dialect {
 }
 
 /// Request/response vocabulary shared by `OpenAPI` and every sidecar selector.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum Body {
     /// Select the operation's request body.

@@ -1,4 +1,4 @@
-"""Public domain errors exported by the shared native engine."""
+"""Public contract, provider, and generation errors."""
 
 from riff._native import GenerationError, ProviderError, RiffError, SchemaError
 

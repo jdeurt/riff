@@ -2,8 +2,7 @@
 
 Python code lives in `python/`; shared schemas and guides live at the repository
 root. Run development commands from `python/` with uv.
-The typed Python facade calls the [shared Rust engine](architecture.md) through
-PyO3; source installation requires Rust and a platform linker.
+See [installation](installation.md) for source-build prerequisites.
 
 ## Construct a factory
 
@@ -37,7 +36,7 @@ OpenAPI selection options are keyword-only:
 Every generation method accepts `count=1`, `seed=None`, `profile="mixed"`, and
 `max_attempts=100` as keyword-only arguments. Count is nonnegative; attempt limits
 are positive integers. Count is at most 10000 and attempts at most 100000.
-Integer seeds are normalized modulo 2⁶⁴. Profiles are `mixed`, `realistic`, and
+Integer seeds up to 1024 decimal digits are normalized modulo 2⁶⁴. Profiles are `mixed`, `realistic`, and
 `boundary`. `factory.is_valid(value)` checks a JSON value against the compiled
 contract without generating data.
 
@@ -60,7 +59,7 @@ Malformed failure values do not go through successful model decoding.
 
 `JSONValue` is the recursive union of JSON scalars, arrays, and string-keyed
 objects. Numbers must be finite. Integers retain arbitrary precision within the
-core's limits. File inputs and native results that would lose decimal precision
+documented limits. File inputs and generated results that would lose decimal precision
 when represented as Python floats are rejected; see [numeric limits](json-schema.md#numbers-and-limits).
 
 `SuccessCase[T]` contains a typed `value`, the original JSON `payload`, and literal
@@ -147,5 +146,5 @@ envelopes with `--expectation pass|fail`. `--fixtures file.yaml` attaches a side
 from schemas. Diagnostics go to stderr; contract/generation failures return exit
 code 2 without partial JSON output.
 
-The [dogfooding guide](dogfooding.md) describes the run-options schema and generated
-contracts used to test these operations.
+The [input-fuzzing guide](input-fuzzing.md) describes tests of JSON Schema,
+OpenAPI, and sidecar inputs.

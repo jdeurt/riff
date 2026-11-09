@@ -165,7 +165,7 @@ await test("non-JSON providers and unsupported metadata fail through public erro
       FixtureFactory.fromSchema({ type: "integer" }).generate({
         seed: Number.MAX_SAFE_INTEGER + 1,
       }),
-    z.ZodError,
+    RangeError,
   );
 });
 

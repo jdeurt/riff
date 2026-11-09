@@ -92,7 +92,13 @@
       "files": ["src/native-addon.d.ts"],
       "rules": {
         "eslint/max-params": "off",
-        "import/unambiguous": "off"
+        "import/unambiguous": "off",
+        "typescript/consistent-type-imports": [
+          "error",
+          {
+            "disallowTypeAnnotations": false
+          }
+        ]
       }
     },
     {

@@ -38,14 +38,14 @@ the contract. These exceptions are explicit in `.oxlintrc.json`:
 | Rule family | Reason |
 | --- | --- |
 | Default-only/grouped/last exports | Public named exports keep documentation beside each declaration. |
-| Node modules and synchronous I/O | Local schema loading and native build scripts use Node; the generation API is synchronous. |
+| Node modules and synchronous I/O | Build scripts use Node filesystem operations; the generation API is synchronous. |
 | Null/undefined bans | JSON requires null; optional TypeScript fields use absence. |
 | Readonly parameter enforcement | JSON payloads and isolated provider options are intentionally caller-mutable. Public controls and case fields are readonly. |
 | Ternary, object-key order, rest/spread bans | Conditional expressions, portable schema key order, and typed option composition remain available. |
 | Core undefined-reference rule | TypeScript supplies the authoritative reference/type check. |
 | Import declaration ordering | Oxfmt owns ordering; named imports are still checked. |
 | Common numeric literals | Only -1, 0, 1, and array indexes are exempt from magic-number checks. |
-| CJS/ambient binding files | Neon addons require a small typed CommonJS loader and ambient native declaration. |
+| Runtime declarations | Module loading and ambient declarations have narrow import-style exceptions. |
 | Related error classes | The public error hierarchy shares one module. |
 | HTTP examples/tests | Async HTTP and test registration are allowed; tests run request sequences deliberately and use literal independent expected outcomes. |
 
@@ -54,9 +54,7 @@ including `toJSON` behavior. It is checked for continued necessity.
 
 ## Python
 
-uv manages dependencies. Ruff enables all rules, with the existing documented
-style/test exceptions, and ty treats every diagnostic as an error. The private
-native stub retains docstrings for editor documentation; its narrow `PYI021`
-exception permits those requested docs. Seeded Faker sampling has one documented
-non-cryptographic-RNG exception. Runtime JSON/schema constraints are enforced by
-the Rust core, and Pydantic checks typed views.
+uv manages dependencies. Ruff enables all rules, with documented style/test
+exceptions, and ty treats every diagnostic as an error. Type definitions retain
+docstrings for editor documentation. Fixture payloads and typed model views are
+validated before successful results are returned.

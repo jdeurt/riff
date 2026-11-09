@@ -21,4 +21,8 @@ cargo test --locked -p riff-core
 ```
 
 Exercise behavior through public workflows. Rebuild both native extensions before
-testing their facades, and verify shared behavior with the cross-binding replay.
+testing their interfaces. Keep self-fuzzing and its three input schemas in `rust/`.
+
+Self-fuzzing has exactly three input contracts: full JSON Schema, full OpenAPI,
+and full sidecar schemas in `rust/schemas/`. Keep their tests in Rust. Do not add
+language-specific dogfooding schemas or top-level conformance fixtures.

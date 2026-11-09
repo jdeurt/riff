@@ -1,6 +1,5 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 
-import { success } from "./contracts.js";
 import { GenerationError, SchemaError } from "./errors.js";
 import type { FixtureFactory } from "./factory.js";
 import { jsonValue } from "./json.js";
@@ -20,7 +19,15 @@ export class ModelFactory<ValueT> {
   }
   /** Retain typed values and their exact original JSON independently. */
   public successCases(options: GenerationOptions = {}): SuccessCase<ValueT>[] {
-    return this.factory.generate(options).map((value) => success(this.decode(value), value));
+    return this.factory.successCases(options).map((caseValue) => ({
+      value: this.decode(caseValue.value),
+      payload: caseValue.payload,
+      expectation: caseValue.expectation,
+      schema_valid: caseValue.schema_valid,
+      violations: caseValue.violations,
+      target: caseValue.target,
+      reason: caseValue.reason,
+    }));
   }
   /** Malformed values cannot be represented as validated models. */
   public failureCases(options: GenerationOptions = {}): FailureCase[] {

@@ -33,7 +33,7 @@ def test_native_decimals_that_cannot_round_trip_fail_instead_of_returning_invali
             "multipleOf": 0.1234567890123456,
         }
     )
-    with pytest.raises(GenerationError, match="Python cannot preserve"):
+    with pytest.raises(GenerationError, match="cannot preserve numeric output"):
         factory.generate(count=2, seed=42, max_attempts=2)
 
 
@@ -99,9 +99,9 @@ from riff import FixtureFactory
 resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
 original = ["x" * 1024 for _ in range(1024)]
-result = FixtureFactory.from_schema(True).minimize(
+result = FixtureFactory.from_schema(schema=True).minimize(
     original,
-    is_failure=lambda value: isinstance(value, list) and len(value) > 0,
+    is_failure=lambda value: value == original,
     max_evaluations=2,
 )
 assert result.value == original
@@ -150,3 +150,59 @@ def test_file_schema_shapes_raise_the_public_contract_error(tmp_path: Path, cont
     path.write_text(content)
     with pytest.raises(SchemaError, match="object or boolean"):
         FixtureFactory.from_file(path)
+
+
+@pytest.mark.skipif(
+    sys.platform != "linux", reason="Linux resource limits isolate parser regressions."
+)
+@pytest.mark.parametrize(
+    "content",
+    ["- " * 20000 + "0\n", "type: integer\nminimum: 0e-1000000000\nmaximum: 1\n"],
+    ids=["compact-block-depth", "zero-with-extreme-exponent"],
+)
+def test_resource_exhausting_files_raise_a_contract_error(tmp_path: Path, content: str) -> None:
+    path = tmp_path / "contract.yaml"
+    path.write_text(content)
+    script = """
+import resource
+import sys
+from riff import FixtureFactory, SchemaError
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+resource.setrlimit(resource.RLIMIT_CPU, (2, 2))
+try:
+    factory = FixtureFactory.from_file(sys.argv[1])
+    factory.generate(seed=42, max_attempts=1)
+except SchemaError:
+    print("rejected")
+else:
+    raise AssertionError("Invalid resource demands were accepted")
+"""
+    result = subprocess.run(  # noqa: S603 -- Fixed regression script with OS resource limits.
+        [sys.executable, "-c", script, str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "rejected\n"
+
+
+def test_minimization_tries_zero_for_supported_arbitrary_precision_integers() -> None:
+    calls: list[JSONValue] = []
+
+    def failure(value: JSONValue) -> bool:
+        calls.append(value)
+        return isinstance(value, int) and not isinstance(value, bool)
+
+    result = FixtureFactory.from_schema(schema=True).minimize(
+        10**1000, is_failure=failure, max_evaluations=5
+    )
+    assert isinstance(result.value, int)
+    assert not isinstance(result.value, bool)
+    assert result.value == 0
+    assert result.evaluations == len(calls)
+    assert 1 < result.evaluations <= 5
+    assert any(
+        isinstance(value, int) and not isinstance(value, bool) and value == 0 for value in calls
+    )

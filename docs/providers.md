@@ -1,8 +1,8 @@
 # Providers
 
 A provider describes the meaning of a generated value. The schema constrains its
-shape; the provider supplies domain knowledge. Riff's defaults use Faker behind
-portable names: `email`, `full-name`, `company-name`, `url`, `phone-number`, `city`,
+shape; the provider supplies domain knowledge. Built-in names are `email`,
+`full-name`, `company-name`, `url`, `phone-number`, `city`,
 `country-code`, and `uuid`.
 
 ```yaml
@@ -12,11 +12,14 @@ x-fixture:
   locale: en-US
 ```
 
-Locale names use language-region spelling. Python defaults support locales
-available in the installed Faker version. JavaScript defaults support `en-US`,
-`en-GB`, `de-DE`, `fr-FR`, and `ja-JP`. Built-in locale availability is checked at
-compilation. Custom providers decide which locales and options they support.
-Faker algorithms and generated text can differ between bindings.
+Locale names use language-region spelling. Built-ins support `en-US`, `en-GB`,
+`de-DE`, `fr-FR`, and `ja-JP` in Python and JavaScript. Unsupported built-in
+locales fail at compilation. Custom providers decide which locales and options
+they support.
+
+The same Riff version, contract, options, and seed produce the same built-in data
+in Python and JavaScript for values supported by both languages. Save fixture
+payloads for replay across upgrades; exact generated text can change by version.
 
 ## Register a custom semantic type
 
@@ -75,5 +78,5 @@ generation budget and eventually raises `GenerationError`. Provider execution
 itself has no timeout; providers should do bounded local work.
 
 JavaScript uses the same contract with `ProviderContext.seed` represented as
-`bigint`; Python uses `int`, and Rust uses `u64`. See the
+`bigint`; Python uses `int`. See the
 [JavaScript provider example](javascript-api.md#custom-providers).

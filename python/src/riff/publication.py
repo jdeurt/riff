@@ -1,4 +1,4 @@
-"""Publish OpenAPI copies using schema-aware native annotation removal."""
+"""Publish OpenAPI copies without fixture annotations."""
 
 import json
 

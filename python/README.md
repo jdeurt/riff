@@ -1,7 +1,7 @@
 # Riff for Python
 
-Python 3.10+ bindings to the shared Rust implementation of the
-[Riff specification](../docs/spec.md), using PyO3 and typed Pydantic views.
+Generate JSON fixtures for Python 3.10+ tests from JSON Schema, OpenAPI, or
+Pydantic models. Use built-in or custom providers, declared failures, and replay.
 Source builds require [Rust](https://rustup.rs/) and a platform C linker.
 
 ```sh
@@ -15,7 +15,7 @@ uv run python -m examples.consumer
 Run these commands from `python/`. Development dependencies include the tools
 and libraries used by the examples; production dependencies are declared
 separately. The workspace lockfile is at the repository root.
-After changing Rust, rebuild with `uv sync --locked --reinstall-package riff`.
+After source changes, rebuild with `uv sync --locked --reinstall-package riff`.
 
 Start with the [quick start](../docs/quickstart.md). Then choose
 [typed metadata](../docs/model-metadata.md) or [sidecar annotations](../docs/sidecars.md),

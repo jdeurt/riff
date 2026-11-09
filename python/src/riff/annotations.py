@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, overload
 
-from riff.compiler import JSON_ADAPTER, FixtureMetadata, Strategy
+from riff._native import validate_metadata
+from riff.compiler import JSON_ADAPTER, Strategy
 from riff.compiler import FailureSource as Failure
 
 if TYPE_CHECKING:
@@ -61,9 +63,5 @@ def fixture(
         metadata["fail"] = JSON_ADAPTER.validate_python(
             fail.model_dump(mode="json", by_alias=True, exclude_unset=True)
         )
-    parsed = FixtureMetadata.model_validate(metadata)
-    return {
-        "x-fixture": JSON_ADAPTER.validate_python(
-            parsed.model_dump(mode="json", by_alias=True, exclude_unset=True)
-        )
-    }
+    validate_metadata(json.dumps(metadata, allow_nan=False))
+    return {"x-fixture": metadata}

@@ -66,16 +66,16 @@ Recognized standard formats are asserted using the selected dialect's format
 checker. Built-in generators cover email/IDN email, hostnames, IPv4/IPv6, UUID,
 URI/IRI references, URI templates, date/time/duration, JSON Pointers, and regex
 strings. An unknown format remains an annotation, as JSON Schema specifies;
-other constraints still apply. Both bindings use Rust's `jsonschema` validator
-and its `fancy-regex` backend. Pattern sampling uses `rand_regex`; patterns it
-cannot sample require explicit examples or a provider. Sampling limits patterns
-to 1024 UTF-8 bytes, repetitions to 32, and compiled sampling capacity to 4096.
-There is no cross-engine regex equivalence guarantee.
+other constraints still apply. Regex validation supports backtracking constructs;
+pattern sampling supports a smaller set. Supply explicit examples or a provider
+when Riff cannot sample a pattern. Sampling limits patterns to 1024 UTF-8 bytes,
+repetitions to 32, and expansion capacity to 4096. Regex semantics can differ
+from your application's validator.
 
 Local acyclic JSON Pointer references are expanded against the supplied document.
 Remote references, recursive/dynamic references, anchor references, reference
-siblings, custom vocabularies, and URI resource/base-ID scoping are outside the
-shared engine. Nested dialect switching is also unsupported. Unsupported schema
+siblings, custom vocabularies, and URI resource/base-ID scoping are unsupported in
+this release. Nested dialect switching is also unsupported. Unsupported schema
 validation keywords are rejected.
 Use an explicit provider or explicit values when generation needs domain rules
 beyond the contract.
@@ -92,18 +92,19 @@ The enclosing case separately reports whether the full body satisfies its schema
 
 ## Numbers and limits
 
-The Rust engine preserves JSON decimal constraints exactly, including integers
-larger than 64 bits. Numeric coefficients are limited to 1024 digits and absolute
-normalized decimal scales to 1024; oversized numbers and extreme exponents fail before
-expensive expansion. Numeric JSON text also has a 2100-character lexical limit.
-These checks apply to contracts, explicit values, provider
-results, validation inputs, and minimization candidates.
+Numeric constraints preserve their JSON decimal meaning, including integers
+larger than 64 bits. Numeric coefficients are limited to 1024 digits. Absolute decimal scales must
+remain within 1024 before and after normalization; oversized values and extreme
+exponents are rejected. Numeric JSON text also has a 2100-character lexical limit.
+These checks apply to contracts, explicit values, provider results, validation
+inputs, and minimization candidates.
 
-Python exposes integers and finite floats. JavaScript exposes finite numbers;
+Python exposes integers and finite floats. JavaScript JSON values must use finite
+numbers, with integer values and schema bounds limited to ±(2⁵³−1);
 use `bigint` for seeds, which are separate from JSON payloads. File readers reject
-numeric literals that those public types would round. Native output decoding
-likewise rejects an unrepresentable value with `GenerationError`, rather than
-silently altering the fixture. A number already rounded before being passed to
+numeric literals that those public types would round. Generated values that
+cannot be represented raise `GenerationError`; the fixture is never silently
+altered. A number already rounded before being passed to
 Riff cannot be recovered; use strings for domain values needing decimal fidelity.
 
 Pass and fail payloads have maximum depth 32 and string/collection sizes 1024,
@@ -116,3 +117,15 @@ search work; provider code, oracle code, and regex execution have no timeout.
 Minimization enumerates reductions lazily. Its candidate-work budget is
 `100 * maxEvaluations`, separate from the oracle-call limit; either can set the
 result's exhaustion flag. It does not allocate all possible reductions upfront.
+
+## Contract files
+
+Both languages read UTF-8 JSON and YAML 1.2 using the same rules. Files are limited
+to 16 MiB and must contain one document with string object keys and finite JSON
+values. Duplicate keys, YAML aliases, and explicit tags are rejected. Quote
+numeric response statuses and strings such as `'null'` or `'true'` when those
+words are data. Strings must contain valid Unicode scalar values; unpaired
+surrogates are rejected. JSON files must also satisfy JSON syntax.
+
+Numeric literals retain their original meaning. A file value that the receiving
+language would round is rejected before fixture generation.

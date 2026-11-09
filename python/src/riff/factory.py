@@ -1,18 +1,15 @@
-"""Typed Python facade for the shared Rust fixture engine."""
+"""Typed fixture generation from schemas, OpenAPI, and models."""
 
 from __future__ import annotations
 
 import json
 from typing import TYPE_CHECKING, Literal, TypeVar
 
-from faker.config import AVAILABLE_LOCALES
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter
 
 from riff._native import NativeFactory
 from riff.compiler import JSON_ADAPTER, SCHEMA_ADAPTER
 from riff.contracts import FailureCase, FixtureCase, SuccessCase
-from riff.documents import decode_native, read_document
-from riff.errors import SchemaError
 from riff.minimize import MinimizationResult, minimize
 from riff.models import ModelFactory
 from riff.providers import provider_bridge
@@ -28,20 +25,11 @@ if TYPE_CHECKING:
 ModelT = TypeVar("ModelT", bound=BaseModel)
 VALUES = TypeAdapter[list[JSONValue]](list[JSONValue])
 FAILURES = TypeAdapter[list[FailureCase]](list[FailureCase])
-
-
-class GenerationOptions(BaseModel):
-    """Validate invocation options before calling native code."""
-
-    model_config = ConfigDict(strict=True, extra="forbid")
-    count: int = Field(ge=0, le=10000)
-    seed: int | None
-    profile: Profile
-    max_attempts: int = Field(ge=1, le=100000)
+SUCCESSES = TypeAdapter[list[SuccessCase[JSONValue]]](list[SuccessCase[JSONValue]])
 
 
 class FixtureFactory:
-    """Compile a contract once; generate independent, seeded native batches."""
+    """Compile a contract once and generate independent, seeded batches."""
 
     _native: NativeFactory
     _providers: dict[str, Provider]
@@ -54,33 +42,29 @@ class FixtureFactory:
         fixture_file: str | Path | None = None,
     ) -> None:
         """Compile a standalone schema with optional registered providers and sidecar."""
-        self._configure(schema, providers=providers, fixture_file=fixture_file)
+        self._configure(
+            {"kind": "inline", "value": schema}, providers=providers, fixture_file=fixture_file
+        )
 
     def _configure(
         self,
-        document: JSONValue,
+        source: dict[str, JSONValue],
         *,
         providers: Mapping[str, Provider] | None,
         fixture_file: str | Path | None,
         operation: dict[str, JSONValue] | None = None,
     ) -> None:
         self._providers = dict(providers or {})
-        try:
-            copied = JSON_ADAPTER.validate_python(document)
-        except ValidationError as error:
-            message = f"Contract must contain only finite JSON values: {error}"
-            raise SchemaError(message) from error
-        overlay = (
-            None
+        configuration: dict[str, JSONValue] = {
+            "providers": list(self._providers),
+            "operation": operation,
+            "fixtures": None
             if fixture_file is None
-            else json.dumps(read_document(fixture_file), allow_nan=False)
-        )
+            else {"kind": "file", "value": str(fixture_file)},
+        }
         self._native = NativeFactory(
-            json.dumps(copied, allow_nan=False),
-            list(self._providers),
-            [locale.replace("_", "-") for locale in AVAILABLE_LOCALES],
-            None if operation is None else json.dumps(operation),
-            overlay,
+            json.dumps(JSON_ADAPTER.validate_python(source), allow_nan=False),
+            json.dumps(configuration, allow_nan=False),
         )
 
     @classmethod
@@ -107,7 +91,7 @@ class FixtureFactory:
         providers: Mapping[str, Provider] | None = None,
         fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
-        """Select an exact OpenAPI request or response body, resolved by Rust."""
+        """Select an exact OpenAPI request or response body."""
         factory = cls.__new__(cls)
         operation: dict[str, JSONValue] = {
             "path": path,
@@ -117,7 +101,11 @@ class FixtureFactory:
             "body": body,
         }
         cls._configure(
-            factory, document, providers=providers, fixture_file=fixture_file, operation=operation
+            factory,
+            {"kind": "inline", "value": document},
+            providers=providers,
+            fixture_file=fixture_file,
+            operation=operation,
         )
         return factory
 
@@ -135,25 +123,24 @@ class FixtureFactory:
         fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
         """Read local JSON/YAML and optionally select an OpenAPI body."""
-        document = read_document(source)
+        factory = cls.__new__(cls)
+        operation: dict[str, JSONValue] | None = None
         if path is not None:
-            if not isinstance(document, dict):
-                message = "OpenAPI document must be an object."
-                raise SchemaError(message)
-            return cls.from_openapi(
-                document,
-                path=path,
-                method=method,
-                status=status,
-                media_type=media_type,
-                body=body,
-                providers=providers,
-                fixture_file=fixture_file,
-            )
-        if not isinstance(document, (dict, bool)):
-            message = "Standalone schema must be an object or boolean."
-            raise SchemaError(message)
-        return cls.from_schema(document, providers=providers, fixture_file=fixture_file)
+            operation = {
+                "path": path,
+                "method": method,
+                "body": body,
+                "status": status,
+                "mediaType": media_type,
+            }
+        cls._configure(
+            factory,
+            {"kind": "file", "value": str(source)},
+            providers=providers,
+            fixture_file=fixture_file,
+            operation=operation,
+        )
+        return factory
 
     @classmethod
     def for_model(
@@ -165,7 +152,7 @@ class FixtureFactory:
         ).as_model(model)
 
     def as_model(self, model: type[ModelT]) -> ModelFactory[ModelT]:
-        """Bind a typed view, retaining original payloads and native validation."""
+        """Bind a typed view while retaining original payloads and schema validation."""
         return ModelFactory(self, model)
 
     def generate(
@@ -177,9 +164,9 @@ class FixtureFactory:
         max_attempts: int = 100,
     ) -> list[JSONValue]:
         """Return a complete valid batch; never return partial data on exhaustion."""
-        options = self._options(count, seed, profile, max_attempts)
-        return VALUES.validate_python(
-            decode_native(self._native.generate(options, provider_bridge(self._providers)))
+        options = _encode_options(count, seed, profile, max_attempts)
+        return VALUES.validate_json(
+            self._native.generate(options, provider_bridge(self._providers))
         )
 
     def success_cases(
@@ -191,12 +178,10 @@ class FixtureFactory:
         max_attempts: int = 100,
     ) -> list[SuccessCase[JSONValue]]:
         """Return positive cases with literal pass/valid types."""
-        return [
-            SuccessCase(value=value, payload=value)
-            for value in self.generate(
-                count=count, seed=seed, profile=profile, max_attempts=max_attempts
-            )
-        ]
+        options = _encode_options(count, seed, profile, max_attempts, "pass")
+        return SUCCESSES.validate_json(
+            self._native.cases(options, provider_bridge(self._providers))
+        )
 
     def failure_cases(
         self,
@@ -206,11 +191,9 @@ class FixtureFactory:
         profile: Profile = "mixed",
         max_attempts: int = 100,
     ) -> list[FailureCase]:
-        """Mutate declared failures in Rust, retaining raw values and diagnostics."""
-        options = self._options(count, seed, profile, max_attempts)
-        return FAILURES.validate_python(
-            decode_native(self._native.failure_cases(options, provider_bridge(self._providers)))
-        )
+        """Mutate declared failures, retaining raw values and diagnostics."""
+        options = _encode_options(count, seed, profile, max_attempts, "fail")
+        return FAILURES.validate_json(self._native.cases(options, provider_bridge(self._providers)))
 
     def generate_cases(
         self,
@@ -222,20 +205,11 @@ class FixtureFactory:
         max_attempts: int = 100,
     ) -> list[FixtureCase]:
         """Keep caller-declared outcome separate from observed schema validity."""
+        options = _encode_options(count, seed, profile, max_attempts, expectation)
+        output = self._native.cases(options, provider_bridge(self._providers))
         if expectation == "pass":
-            return list(
-                self.success_cases(
-                    count=count, seed=seed, profile=profile, max_attempts=max_attempts
-                )
-            )
-        if expectation == "fail":
-            return list(
-                self.failure_cases(
-                    count=count, seed=seed, profile=profile, max_attempts=max_attempts
-                )
-            )
-        message = f"Unknown case expectation: {expectation}"
-        raise ValueError(message)
+            return list(SUCCESSES.validate_json(output))
+        return list(FAILURES.validate_json(output))
 
     def minimize(
         self,
@@ -245,7 +219,7 @@ class FixtureFactory:
         max_evaluations: int = 100,
         preserve_schema: bool = True,
     ) -> MinimizationResult:
-        """Reduce a reproducer using the native engine and caller-owned oracle."""
+        """Reduce a reproducer using a caller-owned failure oracle."""
         return minimize(
             value,
             self._native,
@@ -259,16 +233,23 @@ class FixtureFactory:
         payload = JSON_ADAPTER.validate_python(value)
         return self._native.is_valid(json.dumps(payload, allow_nan=False))
 
-    @staticmethod
-    def _options(count: int, seed: int | None, profile: Profile, max_attempts: int) -> str:
-        options = GenerationOptions(
-            count=count, seed=seed, profile=profile, max_attempts=max_attempts
-        )
-        return json.dumps(
-            {
-                "count": options.count,
-                "seed": None if options.seed is None else str(options.seed % (1 << 64)),
-                "profile": options.profile,
-                "maxAttempts": options.max_attempts,
-            }
-        )
+
+def _encode_options(
+    count: int,
+    seed: int | None,
+    profile: Profile,
+    max_attempts: int,
+    expectation: Expectation | None = None,
+) -> str:
+    if seed is not None and (isinstance(seed, bool) or not isinstance(seed, int)):
+        message = "seed must be an integer or None"
+        raise ValueError(message)
+    controls: dict[str, JSONValue] = {
+        "count": count,
+        "seed": seed,
+        "profile": profile,
+        "maxAttempts": max_attempts,
+    }
+    if expectation is not None:
+        controls["expectation"] = expectation
+    return json.dumps(controls, allow_nan=False)

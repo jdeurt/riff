@@ -26,17 +26,17 @@ pub fn minimize(
 ) -> Result<MinimizationResult> {
     crate::limits::validate_numbers(input, 0)?;
     if maximum == 0 {
-        return Err(Error::Schema("maxEvaluations must be positive.".to_owned()));
+        return Err(Error::Argument("maxEvaluations must be positive.".to_owned()));
     }
     let mut current = input.clone();
     if preserve && !node.valid(&current) {
-        return Err(Error::Schema(
+        return Err(Error::Argument(
             "Initial value violates the schema; disable schema preservation for malformed cases."
                 .to_owned(),
         ));
     }
     if !oracle(&current)? {
-        return Err(Error::Schema("Initial value does not reproduce the failure.".to_owned()));
+        return Err(Error::Argument("Initial value does not reproduce the failure.".to_owned()));
     }
     let mut evaluations = 1;
     let mut remaining_candidates = maximum.saturating_mul(100);
@@ -152,18 +152,21 @@ fn scalar_reductions(value: &Value) -> Vec<Value> {
     match value {
         Value::Bool(true) => candidates.push(Value::Bool(false)),
         Value::Number(number) => {
+            if !equivalent(value, &json!(0)) {
+                candidates.push(json!(0));
+            }
             if let Some(value) = number.as_i64() {
                 if value != 0 {
                     candidates.extend([
-                        json!(0),
                         json!(value / 2),
                         json!(if value > 0 { value - 1 } else { value + 1 }),
                     ]);
                 }
             } else if let Some(value) = number.as_f64()
+                && value.is_finite()
                 && value != 0.0
             {
-                candidates.extend([json!(0), json!(value / 2.0)]);
+                candidates.push(json!(value / 2.0));
                 let toward_zero = if value > 0.0 { value - 1.0 } else { value + 1.0 };
                 if toward_zero.abs() < value.abs() {
                     candidates.push(json!(toward_zero));
