@@ -2,9 +2,11 @@
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal, Protocol
+from typing import Generic, Literal, Protocol, TypeAlias, TypeVar
 
 from riff.types import JSONValue
+
+ValueT_co = TypeVar("ValueT_co", covariant=True)
 
 
 @dataclass(frozen=True)
@@ -34,10 +36,10 @@ class Violation:
 
 
 @dataclass(frozen=True)
-class SuccessCase[ValueT]:
+class SuccessCase(Generic[ValueT_co]):
     """A validated successful payload; its outcome and validity have literal types."""
 
-    value: ValueT
+    value: ValueT_co
     payload: JSONValue
     expectation: Literal["pass"] = field(default="pass", init=False)
     schema_valid: Literal[True] = field(default=True, init=False)
@@ -63,7 +65,7 @@ class FailureCase:
         return self.value
 
 
-type FixtureCase = SuccessCase[JSONValue] | FailureCase
+FixtureCase: TypeAlias = SuccessCase[JSONValue] | FailureCase
 
 
 def case_json(case: FixtureCase) -> dict[str, JSONValue]:

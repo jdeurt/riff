@@ -1,9 +1,9 @@
 import asyncio
-from typing import assert_type
 
 import httpx
 import pytest
 from pydantic import BaseModel, Field, TypeAdapter
+from typing_extensions import assert_type
 
 from examples.app import create_app
 from examples.published_openapi import configure_public_openapi

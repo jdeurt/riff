@@ -1,6 +1,6 @@
 # Riff for Python
 
-Python 3.12+ reference implementation of the [Riff specification](../docs/spec.md).
+Python 3.10+ reference implementation of the [Riff specification](../docs/spec.md).
 
 ```sh
 uv sync --locked

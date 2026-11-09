@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from faker import Faker
@@ -97,7 +97,7 @@ def formatted_value(format_name: str, faker: Faker, random: Random) -> str:
         case "date":
             return (date(2000, 1, 1) + timedelta(days=random.randrange(10958))).isoformat()
         case "date-time":
-            start = datetime(2000, 1, 1, tzinfo=UTC)
+            start = datetime(2000, 1, 1, tzinfo=timezone.utc)
             return (start + timedelta(seconds=random.randrange(946771200))).isoformat()
         case _:
             message = f"Unsupported string format: {format_name}"

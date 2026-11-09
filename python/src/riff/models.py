@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -12,12 +12,14 @@ from riff.contracts import FailureCase, SuccessCase
 from riff.errors import GenerationError
 from riff.validation import schema_validator
 
+ModelT = TypeVar("ModelT", bound=BaseModel)
+
 if TYPE_CHECKING:
     from riff.factory import FixtureFactory
     from riff.types import JSONValue, Profile, Schema
 
 
-class ModelFactory[ModelT: BaseModel]:
+class ModelFactory(Generic[ModelT]):
     """Bind a fixture contract to a model, preserving its inferred result type."""
 
     def __init__(self, factory: FixtureFactory, model: type[ModelT], schema: Schema) -> None:

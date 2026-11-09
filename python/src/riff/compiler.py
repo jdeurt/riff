@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal, Self
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from faker.config import AVAILABLE_LOCALES
 from pydantic import (
@@ -17,6 +17,7 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from typing_extensions import Self, TypeAliasType
 
 from riff.errors import SchemaError
 from riff.schema import normalize_schema
@@ -105,10 +106,13 @@ class FilterStrategy(StrategyModel):
         return predicate if isinstance(predicate, bool) else predicate.contract
 
 
-type Strategy = Annotated[
-    SchemaStrategy | ValuesStrategy | ProviderStrategy | ChoiceStrategy | FilterStrategy,
-    Field(discriminator="kind"),
-]
+Strategy = TypeAliasType(
+    "Strategy",
+    Annotated[
+        SchemaStrategy | ValuesStrategy | ProviderStrategy | ChoiceStrategy | FilterStrategy,
+        Field(discriminator="kind"),
+    ],
+)
 
 
 class Source(StrategyModel):
@@ -321,7 +325,7 @@ class SchemaNode(BaseModel):
         yield from (child for _, child in self.child_locations())
 
 
-type Node = SchemaNode | bool
+Node = TypeAliasType("Node", SchemaNode | bool)
 NODE_ADAPTER = TypeAdapter[Node](Node)
 
 

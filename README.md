@@ -32,7 +32,8 @@ The endpoint guide shows how those fixtures enter real tests.
 
 ## Python development
 
-Python 3.12+ and [uv](https://docs.astral.sh/uv/) are required.
+Python 3.10+ and [uv](https://docs.astral.sh/uv/) are required. CI checks Python
+3.10, 3.11, 3.12, 3.13, and 3.14.
 
 ```sh
 cd python

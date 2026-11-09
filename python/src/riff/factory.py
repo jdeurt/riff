@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from secrets import randbits
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, TypeVar
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -19,6 +19,8 @@ from riff.models import ModelFactory
 from riff.overlays import OperationSelector, apply_fixture_file
 from riff.schema import dereference_object, normalize_schema
 from riff.types import Profile
+
+ModelT = TypeVar("ModelT", bound=BaseModel)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -170,7 +172,7 @@ class FixtureFactory:
         return cls.from_schema(document, providers=providers, fixture_file=fixture_file)
 
     @classmethod
-    def for_model[ModelT: BaseModel](
+    def for_model(
         cls, model: type[ModelT], *, providers: Mapping[str, Provider] | None = None
     ) -> ModelFactory[ModelT]:
         """Infer the result type and contract from a Pydantic model."""
@@ -180,7 +182,7 @@ class FixtureFactory:
             raise SchemaError(message)
         return cls.from_schema(document, providers=providers).as_model(model)
 
-    def as_model[ModelT: BaseModel](self, model: type[ModelT]) -> ModelFactory[ModelT]:
+    def as_model(self, model: type[ModelT]) -> ModelFactory[ModelT]:
         """Bind a validated result model while retaining the original contract."""
         return ModelFactory(self, model, self._contract)
 
