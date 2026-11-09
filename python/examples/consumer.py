@@ -22,7 +22,9 @@ def customer_label(client: httpx.Client, customer_id: str) -> str:
 def main() -> None:
     """Feed generated responses through the HTTP client and actual consumer."""
     factory = FixtureFactory.from_file(
-        Path(__file__).resolve().parents[2] / "examples/vendor.yaml", path="/customers/{id}"
+        Path(__file__).resolve().parents[2] / "examples/vendor.yaml",
+        path="/customers/{id}",
+        fixture_file=Path(__file__).resolve().parents[2] / "examples/vendor.fixtures.yaml",
     )
     for body in factory.generate(count=50, seed=42):
         transport = httpx.MockTransport(

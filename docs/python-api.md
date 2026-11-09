@@ -5,9 +5,9 @@ repository root. Run development commands from `python/` with uv.
 
 ## FixtureFactory
 
-- `from_schema(schema, providers=None)`: compile a standalone Draft 7 subset.
-- `from_openapi(document, *, path, method="get", status="200", media_type="application/json", body="response", providers=None)`: select an exact request or response body schema.
-- `from_file(source, *, path=None, ...)`: read local JSON/YAML; a path selects an OpenAPI operation, otherwise the file is a standalone schema.
+- `from_schema(schema, providers=None, fixture_file=None)`: compile a standalone Draft 7 subset with optional sidecar metadata.
+- `from_openapi(document, *, path, method="get", status="200", media_type="application/json", body="response", providers=None, fixture_file=None)`: select an exact request or response body schema.
+- `from_file(source, *, path=None, fixture_file=None, ...)`: read local JSON/YAML; a path selects an OpenAPI operation, otherwise the file is a standalone schema.
 - `for_model(Model, providers=None)`: derive a schema from a Pydantic model and return a model-typed factory.
 - `as_model(Model)`: bind an existing compiled contract to a Pydantic model.
 - `generate(*, count=1, seed=None, profile="mixed", max_attempts=100)`: return a list of schema-valid JSON bodies.
@@ -19,6 +19,13 @@ Typed factories expose `generate()` for validated models, `success_cases()` for
 Model binding checks both the original schema and the model. Successful fixtures
 are validated, not coerced into model validity. Malformed failure values never
 pass through successful model decoding.
+The model's JSON serialization is also checked against the original schema;
+bindings that discard required data raise `GenerationError`. For outbound model
+serialization, use `model_dump(mode="json", by_alias=True, exclude_unset=True)` to
+retain schema field names and omit defaults that were absent from the input.
+
+`fixture_file` accepts the [sidecar format](sidecars.md). The CLI equivalent is
+`--fixtures file.yaml`; `--body request --method post` selects a request body.
 
 ## Types and errors
 
@@ -67,3 +74,6 @@ The CLI writes arrays by default, JSON Lines with `--jsonl`, and case envelopes
 when `--expectation pass|fail` is supplied. It writes diagnostics to stderr and
 returns exit code 2 on contract/generation failures, with no partial JSON output.
 It never imports custom providers from schema files.
+
+The [dogfooding guide](dogfooding.md) describes the published run-options schema
+and generated contracts used to test these workflows.

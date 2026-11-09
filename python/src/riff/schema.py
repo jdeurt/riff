@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError as ValidationSchemaError
@@ -75,12 +77,23 @@ def resolve_pointer(document: JSONValue, reference: str) -> JSONValue:
         message = f"Only local JSON Pointer references are supported: {reference}"
         raise SchemaError(message)
     current = document
-    for token in reference[2:].split("/"):
+    for token in unquote(reference[2:]).split("/"):
+        if re.search(r"~(?![01])", token):
+            message = f"Invalid JSON Pointer escape in reference: {reference}"
+            raise SchemaError(message)
         key = token.replace("~1", "/").replace("~0", "~")
-        if not isinstance(current, dict) or key not in current:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        elif (
+            isinstance(current, list)
+            and key.isdecimal()
+            and str(int(key)) == key
+            and int(key) < len(current)
+        ):
+            current = current[int(key)]
+        else:
             message = f"Unresolved reference: {reference}"
             raise SchemaError(message)
-        current = current[key]
     return current
 
 

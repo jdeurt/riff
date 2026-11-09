@@ -1,7 +1,10 @@
-import json
 import subprocess
 import sys
 from pathlib import Path
+
+from pydantic import TypeAdapter
+
+from riff import JSONValue
 
 
 def test_cli_generates_replayable_payloads_and_labeled_failure_jsonl() -> None:
@@ -22,15 +25,24 @@ def test_cli_generates_replayable_payloads_and_labeled_failure_jsonl() -> None:
     replay = subprocess.run(command, capture_output=True, text=True, check=True)  # noqa: S603
     assert replay.stdout == first.stdout
     assert first.stderr == ""
-    bodies = json.loads(first.stdout)
+    bodies = TypeAdapter[list[JSONValue]](list[JSONValue]).validate_json(first.stdout)
     assert len(bodies) == 4
-    assert all(body["status"] == "active" for body in bodies)
+    for body in bodies:
+        assert isinstance(body, dict)
+        assert body["status"] == "active"
     failure = subprocess.run(  # noqa: S603
         [*command, "--expectation", "fail", "--jsonl"], capture_output=True, text=True, check=True
     )
-    cases = [json.loads(line) for line in failure.stdout.splitlines()]
+    cases = [
+        TypeAdapter[JSONValue](JSONValue).validate_json(line)
+        for line in failure.stdout.splitlines()
+    ]
     assert len(cases) == 4
-    assert all(case["expectation"] == "fail" and case["target"] for case in cases)
+    for case in cases:
+        assert isinstance(case, dict)
+        assert case["expectation"] == "fail"
+        assert isinstance(case["target"], str)
+        assert case["target"] != ""
 
 
 def test_cli_failure_has_no_partial_json_on_stdout(tmp_path: Path) -> None:

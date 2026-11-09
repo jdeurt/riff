@@ -17,32 +17,27 @@ components:
     Customer:
       type: object
       additionalProperties: false
-      required: [id, name, status, balance_cents]
+      required:
+      - id
+      - name
+      - status
+      - balance_cents
       properties:
         id:
           type: string
           format: uuid
-          x-fixture:
-            provider: uuid
         name:
           type: string
           maxLength: 100
-          x-fixture:
-            provider: full-name
-            locale: en-US
-            examples: ['', '  Ada Lovelace  ', '李明']
-            fail:
-              examples: [null, 42]
-              reason: Consumer requires a string name.
         email:
           type: string
           format: email
           nullable: true
-          x-fixture:
-            provider: email
         status:
           type: string
-          enum: [active, inactive]
+          enum:
+          - active
+          - inactive
         balance_cents:
           type: integer
           minimum: 0
@@ -53,4 +48,8 @@ components:
           uniqueItems: true
           items:
             type: string
-            enum: [trial, premium, overdue, internal]
+            enum:
+            - trial
+            - premium
+            - overdue
+            - internal

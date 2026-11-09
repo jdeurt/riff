@@ -1,0 +1,29 @@
+{
+  "title": "Bounded integer schema grammar for Riff dogfooding",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "minimum",
+    "maximum"
+  ],
+  "properties": {
+    "type": {
+      "const": "integer"
+    },
+    "minimum": {
+      "enum": [
+        -10,
+        0,
+        10
+      ]
+    },
+    "maximum": {
+      "enum": [
+        10,
+        20,
+        50
+      ]
+    }
+  }
+}

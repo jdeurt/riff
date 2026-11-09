@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 
 from jsonschema import Draft7Validator, FormatChecker
 
+from riff.compiler import JSON_ADAPTER
 from riff.contracts import FailureCase, FixtureCase, SuccessCase, Violation
 from riff.errors import GenerationError
 
@@ -54,7 +55,13 @@ def _failure_case(schema: Node, engine: Engine) -> FailureCase:
             continue
         target = engine.random.choice(targets)
         engine.remaining_candidates = engine.max_attempts * 100
-        replacement = engine.source_value(target.source, target.schema)
+        try:
+            replacement = JSON_ADAPTER.validate_python(
+                engine.source_value(target.source, target.schema)
+            )
+        except (ArithmeticError, ValueError, NotImplementedError) as error:
+            message = f"Unable to generate a JSON failure replacement: {error}"
+            raise GenerationError(message) from error
         mutated = _replace(value, target.tokens, replacement)
         if Draft7Validator({"const": value}).is_valid(mutated):
             continue

@@ -16,6 +16,10 @@ dependencies = [
   "pydantic>=2.10,<3",
 ]
 
+[project.urls]
+Repository = "https://github.com/jdeurt/riff"
+Documentation = "https://github.com/jdeurt/riff/tree/main/docs"
+
 [project.scripts]
 riff = "riff.cli:main"
 
@@ -47,7 +51,7 @@ ignore = [
 "examples/*.py" = ["S101", "D", "INP001", "PLR2004"]
 
 [tool.ruff.lint.pylint]
-max-args = 8
+max-args = 9
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic.BaseModel", "riff.compiler.StrategyModel"]

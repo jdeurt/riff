@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from jsonschema import Draft7Validator, FormatChecker
+from pydantic import BaseModel, ConfigDict, Field
 
 from riff.compiler import JSON_ADAPTER
 
@@ -25,6 +26,14 @@ class MinimizationResult:
     budget_exhausted: bool
 
 
+class MinimizationOptions(BaseModel):
+    """Validate minimizer inputs before evaluating the caller's oracle."""
+
+    model_config = ConfigDict(strict=True)
+    max_evaluations: int = Field(ge=1)
+    preserve_schema: bool
+
+
 def minimize(
     value: JSONValue,
     schema: Schema,
@@ -34,9 +43,7 @@ def minimize(
     preserve_schema: bool,
 ) -> MinimizationResult:
     """Keep reductions that still fail; schema preservation is caller-controlled."""
-    if isinstance(max_evaluations, bool) or max_evaluations < 1:
-        message = "max_evaluations must be a positive integer."
-        raise ValueError(message)
+    options = MinimizationOptions(max_evaluations=max_evaluations, preserve_schema=preserve_schema)
     current = JSON_ADAPTER.validate_python(value)
     validator = Draft7Validator(schema, format_checker=FormatChecker())
     if preserve_schema and not validator.is_valid(current):
@@ -48,7 +55,7 @@ def minimize(
         message = "Initial value does not reproduce the failure."
         raise ValueError(message)
     evaluations = 1
-    while evaluations < max_evaluations:
+    while evaluations < options.max_evaluations:
         for candidate in _reductions(current):
             if Draft7Validator({"const": current}).is_valid(candidate):
                 continue
@@ -58,7 +65,7 @@ def minimize(
             if is_failure(deepcopy(candidate)):
                 current = candidate
                 break
-            if evaluations >= max_evaluations:
+            if evaluations >= options.max_evaluations:
                 return MinimizationResult(current, evaluations, budget_exhausted=True)
         else:
             return MinimizationResult(current, evaluations, budget_exhausted=False)

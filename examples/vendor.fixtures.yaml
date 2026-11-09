@@ -1,0 +1,18 @@
+version: '0.1'
+operations:
+  - path: /customers/{id}
+    method: get
+    body: response
+    status: '200'
+    fields:
+      /properties/id:
+        provider: uuid
+      /properties/name:
+        provider: full-name
+        locale: en-US
+        examples: ['', '  Ada Lovelace  ', '李明']
+        fail:
+          examples: [null, 42]
+          reason: Consumer requires a string name.
+      /properties/email:
+        provider: email

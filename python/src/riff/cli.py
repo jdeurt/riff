@@ -34,6 +34,7 @@ class Arguments(BaseModel):
     jsonl: bool
     expectation: Expectation | None
     body: Literal["request", "response"]
+    fixtures: str | None
 
 
 def main() -> int:
@@ -45,6 +46,7 @@ def main() -> int:
     parser.add_argument("--status", default="200")
     parser.add_argument("--media-type", default="application/json")
     parser.add_argument("--body", choices=("request", "response"), default="response")
+    parser.add_argument("--fixtures", help="Sidecar fixture YAML file")
     parser.add_argument("--count", type=int, default=1)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--profile", choices=("mixed", "realistic", "boundary"), default="mixed")
@@ -60,6 +62,7 @@ def main() -> int:
             status=arguments.status,
             media_type=arguments.media_type,
             body=arguments.body,
+            fixture_file=arguments.fixtures,
         )
         fixtures: list[JSONValue]
         if arguments.expectation is None:

@@ -61,6 +61,7 @@ class SchemaStrategy(StrategyModel):
     """Generate from the enclosing schema without its fixture annotation."""
 
     kind: Literal["schema"]
+    constraints: Literal["respect", "violate"] = "respect"
 
 
 class ValuesStrategy(StrategyModel):
@@ -127,8 +128,13 @@ class Source(StrategyModel):
         if self.provider is None and self.model_fields_set.intersection({"locale", "options"}):
             message = "locale and options require a provider"
             raise ValueError(message)
-        for name in ("provider", "examples", "strategy"):
-            if name in self.model_fields_set and getattr(self, name) is None:
+        null_fields = {
+            "provider": self.provider is None,
+            "examples": self.examples is None,
+            "strategy": self.strategy is None,
+        }
+        for name, is_null in null_fields.items():
+            if name in self.model_fields_set and is_null:
                 message = f"{name} must not be null"
                 raise ValueError(message)
         return self
@@ -246,9 +252,9 @@ def _validate_node(node: Node, providers: Mapping[str, Provider]) -> None:
     if node.format is not None and node.format not in FORMATS:
         message = f"Unsupported string format: {node.format}"
         raise SchemaError(message)
-    _validate_source(node.fixture, node, providers)
+    _validate_source(node.fixture, node, providers, allow_violations=False)
     if node.fixture.fail is not None:
-        _validate_source(node.fixture.fail, node, providers)
+        _validate_source(node.fixture.fail, node, providers, allow_violations=True)
     validator = Draft7Validator(node.contract, format_checker=FormatChecker())
     for example in node.fixture.examples or []:
         if not validator.is_valid(example):
@@ -258,11 +264,13 @@ def _validate_node(node: Node, providers: Mapping[str, Provider]) -> None:
         _validate_node(child, providers)
 
 
-def _validate_source(source: Source, node: SchemaNode, providers: Mapping[str, Provider]) -> None:
+def _validate_source(
+    source: Source, node: SchemaNode, providers: Mapping[str, Provider], *, allow_violations: bool
+) -> None:
     if source.provider is not None:
         _validate_provider(source.provider, source.locale, node, providers)
     if source.strategy is not None:
-        _validate_strategy(source.strategy, node, providers)
+        _validate_strategy(source.strategy, node, providers, allow_violations=allow_violations)
 
 
 def _validate_provider(
@@ -283,16 +291,24 @@ def _validate_provider(
 
 
 def _validate_strategy(
-    strategy: Strategy, node: SchemaNode, providers: Mapping[str, Provider]
+    strategy: Strategy,
+    node: SchemaNode,
+    providers: Mapping[str, Provider],
+    *,
+    allow_violations: bool,
 ) -> None:
-    if isinstance(strategy, ProviderStrategy):
+    if isinstance(strategy, SchemaStrategy):
+        if strategy.constraints == "violate" and not allow_violations:
+            message = "constraints: violate is allowed only inside an explicit failure source"
+            raise SchemaError(message)
+    elif isinstance(strategy, ProviderStrategy):
         _validate_provider(strategy.name, strategy.locale, node, providers)
     elif isinstance(strategy, ChoiceStrategy):
         for child in strategy.strategies:
-            _validate_strategy(child, node, providers)
+            _validate_strategy(child, node, providers, allow_violations=allow_violations)
     elif isinstance(strategy, FilterStrategy):
         _validate_node(strategy.predicate, providers)
-        _validate_strategy(strategy.strategy, node, providers)
+        _validate_strategy(strategy.strategy, node, providers, allow_violations=allow_violations)
 
 
 def intersect_nodes(left: Node, right: Node) -> Node:

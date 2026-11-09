@@ -16,6 +16,7 @@ from riff.engine import Engine
 from riff.errors import SchemaError
 from riff.minimize import MinimizationResult, minimize
 from riff.models import ModelFactory
+from riff.overlays import OperationSelector, apply_fixture_file
 from riff.schema import dereference_object, normalize_schema
 from riff.types import Profile
 
@@ -38,7 +39,13 @@ class GenerationOptions(BaseModel):
 class FixtureFactory:
     """Compile a contract once and generate independent, seeded fixture batches."""
 
-    def __init__(self, schema: Schema, *, providers: Mapping[str, Provider] | None = None) -> None:
+    def __init__(
+        self,
+        schema: Schema,
+        *,
+        providers: Mapping[str, Provider] | None = None,
+        fixture_file: str | Path | None = None,
+    ) -> None:
         """Compile a standalone contract; named constructors also support OpenAPI."""
         try:
             document = JSON_ADAPTER.validate_python(schema)
@@ -46,15 +53,21 @@ class FixtureFactory:
             message = f"Contract must contain only finite JSON values: {error}"
             raise SchemaError(message) from error
         self._contract = normalize_schema(document, document, openapi30=False)
+        if fixture_file is not None:
+            self._contract = apply_fixture_file(self._contract, fixture_file, selector=None)
         self._providers = dict(providers or {})
         self._schema = compile_schema(self._contract, self._providers)
 
     @classmethod
     def from_schema(
-        cls, schema: Schema, *, providers: Mapping[str, Provider] | None = None
+        cls,
+        schema: Schema,
+        *,
+        providers: Mapping[str, Provider] | None = None,
+        fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
         """Compile a standalone schema in the supported Draft 7 subset."""
-        return cls(schema, providers=providers)
+        return cls(schema, providers=providers, fixture_file=fixture_file)
 
     @classmethod
     def from_openapi(
@@ -67,6 +80,7 @@ class FixtureFactory:
         media_type: str = "application/json",
         body: Literal["request", "response"] = "response",
         providers: Mapping[str, Provider] | None = None,
+        fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
         """Select an exact request or response body from OpenAPI 3.0/3.1."""
         try:
@@ -103,6 +117,11 @@ class FixtureFactory:
             )
             raise SchemaError(message) from error
         normalized = normalize_schema(schema, copied, openapi30=version.startswith("3.0."))
+        if fixture_file is not None:
+            selector = OperationSelector(
+                path=path, method=method, status=status, body=body, mediaType=media_type
+            )
+            normalized = apply_fixture_file(normalized, fixture_file, selector=selector)
         return cls(normalized, providers=providers)
 
     @classmethod
@@ -116,6 +135,7 @@ class FixtureFactory:
         media_type: str = "application/json",
         body: Literal["request", "response"] = "response",
         providers: Mapping[str, Provider] | None = None,
+        fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
         """Read local JSON/YAML, optionally selecting an OpenAPI operation body."""
         try:
@@ -136,11 +156,12 @@ class FixtureFactory:
                 media_type=media_type,
                 body=body,
                 providers=providers,
+                fixture_file=fixture_file,
             )
         if not isinstance(document, (dict, bool)):
             message = "Standalone schema must be an object or boolean."
             raise SchemaError(message)
-        return cls.from_schema(document, providers=providers)
+        return cls.from_schema(document, providers=providers, fixture_file=fixture_file)
 
     @classmethod
     def for_model[ModelT: BaseModel](
@@ -155,7 +176,7 @@ class FixtureFactory:
 
     def as_model[ModelT: BaseModel](self, model: type[ModelT]) -> ModelFactory[ModelT]:
         """Bind a validated result model while retaining the original contract."""
-        return ModelFactory(self, model)
+        return ModelFactory(self, model, self._contract)
 
     def generate(
         self,

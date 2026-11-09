@@ -1,0 +1,13 @@
+version: '0.1'
+fields:
+  /properties/count:
+    strategy: {kind: values, values: [0, 1, 3]}
+    fail: {examples: [-1, invalid]}
+  /properties/seed:
+    strategy: {kind: values, values: [-1, 0, 7]}
+    fail: {examples: [invalid]}
+  /properties/profile:
+    fail: {examples: [unknown]}
+  /properties/max_attempts:
+    strategy: {kind: values, values: [1, 5]}
+    fail: {examples: [0]}

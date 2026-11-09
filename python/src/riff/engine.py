@@ -29,6 +29,7 @@ from riff.compiler import (
 )
 from riff.contracts import Provider, ProviderContext
 from riff.errors import GenerationError, ProviderError
+from riff.mutations import violation_candidates
 from riff.providers import formatted_value, make_faker, semantic_value
 
 if TYPE_CHECKING:
@@ -210,6 +211,8 @@ class Engine:
     def _strategy_value(self, strategy: Strategy, schema: SchemaNode, *, depth: int) -> JSONValue:
         self._spend_candidate(depth=depth)
         if isinstance(strategy, SchemaStrategy):
+            if strategy.constraints == "violate":
+                return self.random.choice(violation_candidates(schema))
             structural = schema.model_copy(deep=True)
             structural.fixture = FixtureMetadata()
             return self._validated_value(structural, depth=depth + 1)
@@ -256,7 +259,7 @@ class Engine:
         return self.fakers[locale]
 
     def _string(self, schema: SchemaNode) -> str:
-        if schema.format is not None:
+        if schema.format is not None and schema.format not in {"int32", "int64", "float", "double"}:
             return formatted_value(schema.format, self._faker(), self.random)
         if schema.pattern is not None:
             value = self.regex.xeger(schema.pattern)
@@ -351,8 +354,13 @@ class Engine:
             )
             for name in selected
         }
-        while len(values) < wanted and schema.additional is not False:
-            name = f"extra_{len(values)}_{self.random.randrange(1000000)}"
+        if schema.additional is False:
+            return values
+        for index in range(len(schema.properties) + wanted):
+            if len(values) >= wanted:
+                break
+            self._spend_candidate(depth=depth)
+            name = f"extra_{index}"
             if name not in values and name not in schema.properties:
                 values[name] = self._validated_value(schema.additional, depth=depth + 1)
         return values

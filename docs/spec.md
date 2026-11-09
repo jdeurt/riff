@@ -105,16 +105,43 @@ imports. Locale identifiers use hyphenated language-region notation such as
 `en-US`; implementations MUST document supported locales. Options are JSON
 objects interpreted by the selected provider.
 
+### Separate annotation files
+
+Implementations SHOULD accept YAML sidecars that leave the source contract
+unchanged. A sidecar contains `version: '0.1'`, an optional top-level `fields` map,
+and optional `operations` entries. Each operation selects `path`, `method`, `body`,
+`status`, and `mediaType`, and supplies its own `fields` map. Defaults are `get`,
+`response`, `'200'`, and `application/json`; status is ignored for request bodies.
+When operation entries are supplied, exactly one MUST match the selected body.
+
+Field keys MUST be plain RFC 6901 JSON Pointers into the resolved body schema,
+such as `/properties/email` or `/properties/tags/items`. The empty pointer selects
+the root. Percent characters are literal; slash and tilde in names use `~1` and
+`~0`. Reference expansion precedes attachment. Wildcards and paths into examples
+or annotation data are unsupported. Missing paths or boolean-schema targets MUST
+fail. Each entry contains the complete metadata otherwise placed at `x-fixture`.
+Operation fields override global fields at the same pointer, and selected entries
+replace complete inline annotations. They MUST NOT merge conflicting source keys.
+
 ## 5. Strategies
 
 Each strategy is an object with a `kind` discriminator:
 
 ```yaml
 kind: schema
+constraints: respect
 ```
 
 Generate using the enclosing field schema, without reapplying that field's own
 `x-fixture` annotation. Descendant field annotations still apply.
+`constraints` defaults to `respect`. In an explicit failure source it MAY be
+`violate`, which MUST produce a value that violates the annotated schema or report
+generation failure. Implementations SHOULD prefer same-type boundary violations
+such as 0 or 51 for an integer bounded from 1 to 50, then use type violations when
+no supported boundary mutation exists. All mutations MUST remain finite JSON.
+Positive sources MUST reject `constraints: violate`; they cannot weaken the
+successful-fixture guarantee. Overall case validity is checked independently,
+since an enclosing union may still accept a locally invalid replacement.
 
 ```yaml
 kind: values

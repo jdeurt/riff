@@ -24,7 +24,8 @@ uv add 'riff @ git+https://github.com/jdeurt/riff.git#subdirectory=python'
 from riff import FixtureFactory
 
 factory = FixtureFactory.from_file(
-    "../examples/vendor.yaml", path="/customers/{id}"
+    "../examples/vendor.yaml", path="/customers/{id}",
+    fixture_file="../examples/vendor.fixtures.yaml",
 )
 fixtures = factory.generate(count=20, seed=42)
 ```
@@ -33,9 +34,10 @@ Each value is a vendor response body. Pass it to HTTPX, responses, respx, a VCR
 fixture adapter, or your own test fixture layer.
 
 ```sh
-uv run riff ../examples/vendor.yaml --path '/customers/{id}' --count 5 --seed 42
 uv run riff ../examples/vendor.yaml --path '/customers/{id}' \
-  --expectation fail --count 5 --seed 42 --jsonl
+  --fixtures ../examples/vendor.fixtures.yaml --count 5 --seed 42
+uv run riff ../examples/vendor.yaml --path '/customers/{id}' \
+  --fixtures ../examples/vendor.fixtures.yaml --expectation fail --count 5 --seed 42 --jsonl
 ```
 
 The first command writes a JSON array of bodies. The second writes one labeled

@@ -1,0 +1,47 @@
+{
+  "$defs": {
+    "Profile": {
+      "enum": [
+        "mixed",
+        "realistic",
+        "boundary"
+      ],
+      "type": "string"
+    }
+  },
+  "description": "Validate invocation options once, before the engine receives them.",
+  "properties": {
+    "count": {
+      "minimum": 0,
+      "title": "Count",
+      "type": "integer"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Seed"
+    },
+    "profile": {
+      "$ref": "#/$defs/Profile"
+    },
+    "max_attempts": {
+      "minimum": 1,
+      "title": "Max Attempts",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "count",
+    "seed",
+    "profile",
+    "max_attempts"
+  ],
+  "title": "GenerationOptions",
+  "type": "object"
+}

@@ -57,6 +57,25 @@ cases. A failure case starts with a valid body and replaces exactly one declared
 field. Its JSON Pointer appears in `case.target`; its declared expectation and
 observed schema validity remain separate.
 
+To derive a deliberate schema violation without listing values manually:
+
+```yaml
+type: integer
+minimum: 1
+maximum: 50
+x-fixture:
+  fail:
+    strategy: {kind: schema, constraints: violate}
+```
+
+Successful generation stays between 1 and 50. Failure generation selects 0 or
+51 and reports the resulting schema violation. `constraints` defaults to
+`respect`; `violate` is allowed only inside a failure declaration. String lengths,
+array sizes, exclusive numeric bounds, required objects, and type violations also
+have supported mutations. A schema with no supported violating candidate causes
+`GenerationError`. Custom failure providers or failure examples can supply other
+domain-specific negative values.
+
 Keep property assertions in your test framework. A label explains what the test
 expects; it does not prove the application handled the case correctly.
 

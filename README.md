@@ -9,10 +9,15 @@ transport, or VCR setup supplies that data to the system under test.
 The [specification](docs/spec.md) is language-agnostic. The first implementation
 lives in [`python/`](python/), with Faker-backed defaults, custom providers,
 composable strategies, labeled success/failure cases, and seeded replay.
+Fixture annotations may live inline or in sidecar YAML files selected by endpoint
+and schema path. Default generation respects constraints; explicit failure
+strategies can violate them.
 
 ## Guides
 
 - [Quick start](docs/quickstart.md)
+- [Sidecar fixture files](docs/sidecars.md)
+- [Dogfooding Riff](docs/dogfooding.md)
 - [Strategies, filtering, and minimization](docs/strategies.md)
 - [Custom providers](docs/providers.md)
 - [Testing your own endpoints and vendor consumers](docs/testing.md)
