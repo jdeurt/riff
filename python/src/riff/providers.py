@@ -13,6 +13,32 @@ if TYPE_CHECKING:
     from random import Random
 
 
+STRING_FORMATS = frozenset(
+    {
+        "email",
+        "idn-email",
+        "uuid",
+        "uri",
+        "uri-reference",
+        "iri",
+        "iri-reference",
+        "uri-template",
+        "hostname",
+        "idn-hostname",
+        "ipv4",
+        "ipv6",
+        "date",
+        "date-time",
+        "time",
+        "duration",
+        "json-pointer",
+        "relative-json-pointer",
+        "regex",
+        "color",
+    }
+)
+
+
 def make_faker(locale: str, random: Random) -> Faker:
     """Create a provider whose random state belongs only to this batch."""
     faker = Faker(locale.replace("-", "_"))
@@ -38,6 +64,11 @@ def semantic_value(provider: str, faker: Faker) -> str:
 def formatted_value(format_name: str, faker: Faker, random: Random) -> str:
     """Generate supported formats with fixed time bounds for reproducibility."""
     generators = {
+        "idn-email": faker.email,
+        "idn-hostname": faker.hostname,
+        "uri-reference": faker.url,
+        "iri": faker.url,
+        "iri-reference": faker.url,
         "email": faker.email,
         "uuid": faker.uuid4,
         "uri": faker.url,
@@ -47,7 +78,22 @@ def formatted_value(format_name: str, faker: Faker, random: Random) -> str:
     }
     if format_name in generators:
         return generators[format_name]()
+    fixed_formats = {
+        "json-pointer": "/name",
+        "relative-json-pointer": "0/name",
+        "uri-template": "/customers/{id}",
+        "regex": "[A-Z]+",
+        "color": "#a0b1c2",
+    }
+    if format_name in fixed_formats:
+        return fixed_formats[format_name]
     match format_name:
+        case "time":
+            return (
+                f"{random.randrange(24):02d}:{random.randrange(60):02d}:{random.randrange(60):02d}Z"
+            )
+        case "duration":
+            return f"P{random.randrange(366)}D"
         case "date":
             return (date(2000, 1, 1) + timedelta(days=random.randrange(10958))).isoformat()
         case "date-time":

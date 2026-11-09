@@ -116,3 +116,131 @@ def test_minimization_can_preserve_a_malformed_failure_and_respect_its_budget() 
     assert fails(result.value)
     with pytest.raises(ValueError, match="Initial value does not reproduce"):
         factory.minimize("fine", is_failure=lambda _: False)
+
+
+@pytest.mark.parametrize(
+    ("schema", "target"),
+    [
+        (
+            {
+                "type": "object",
+                "required": ["x"],
+                "properties": {"x": {"type": "integer"}},
+                "if": True,
+                "then": {
+                    "properties": {
+                        "x": {"type": "integer", "x-fixture": {"fail": {"examples": ["bad"]}}}
+                    }
+                },
+            },
+            "/x",
+        ),
+        (
+            {
+                "type": "object",
+                "required": ["x_1"],
+                "maxProperties": 1,
+                "patternProperties": {
+                    "^x_": {"type": "integer", "x-fixture": {"fail": {"examples": ["bad"]}}}
+                },
+                "additionalProperties": False,
+            },
+            "/x_1",
+        ),
+        (
+            {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 1,
+                "additionalProperties": {
+                    "type": "integer",
+                    "x-fixture": {"fail": {"examples": ["bad"]}},
+                },
+            },
+            None,
+        ),
+        (
+            {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 1,
+                "unevaluatedProperties": {
+                    "type": "integer",
+                    "x-fixture": {"fail": {"examples": ["bad"]}},
+                },
+            },
+            None,
+        ),
+        (
+            {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 1,
+                "contains": {"type": "integer", "x-fixture": {"fail": {"examples": ["bad"]}}},
+            },
+            "/0",
+        ),
+        (
+            {
+                "type": "array",
+                "prefixItems": [{"const": "head"}],
+                "minItems": 2,
+                "maxItems": 2,
+                "unevaluatedItems": {
+                    "type": "integer",
+                    "x-fixture": {"fail": {"examples": ["bad"]}},
+                },
+            },
+            "/1",
+        ),
+        (
+            {
+                "type": "object",
+                "required": ["a"],
+                "properties": {"a": {"const": 1}, "b": {"type": "integer"}},
+                "additionalProperties": False,
+                "dependentSchemas": {
+                    "a": {
+                        "required": ["b"],
+                        "properties": {
+                            "b": {"type": "integer", "x-fixture": {"fail": {"examples": ["bad"]}}}
+                        },
+                    }
+                },
+            },
+            "/b",
+        ),
+    ],
+)
+def test_failure_sources_in_applicable_schema_scopes_reach_their_payload_fields(
+    schema: dict[str, JSONValue], target: str | None
+) -> None:
+    cases = FixtureFactory.from_schema(schema).failure_cases(count=5, seed=42)
+    assert len(cases) == 5
+    for case in cases:
+        assert not case.schema_valid
+        assert case.violations
+        if target is not None:
+            assert case.target == target
+        else:
+            assert case.target.startswith("/")
+
+
+def test_nested_constraint_violations_use_the_parent_schema_dialect() -> None:
+    schema: dict[str, JSONValue] = {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["x"],
+        "additionalProperties": False,
+        "properties": {
+            "x": {
+                "type": "string",
+                "format": "uuid",
+                "x-fixture": {"fail": {"strategy": {"kind": "schema", "constraints": "violate"}}},
+            }
+        },
+    }
+    for case in FixtureFactory.from_schema(schema).failure_cases(count=20, seed=0):
+        assert not case.schema_valid
+        assert isinstance(case.value, dict)
+        assert not isinstance(case.value["x"], str)

@@ -38,6 +38,7 @@ class SuccessCase[ValueT]:
     """A validated successful payload; its outcome and validity have literal types."""
 
     value: ValueT
+    payload: JSONValue
     expectation: Literal["pass"] = field(default="pass", init=False)
     schema_valid: Literal[True] = field(default=True, init=False)
     violations: tuple[Violation, ...] = field(default=(), init=False)
@@ -55,6 +56,11 @@ class FailureCase:
     target: str
     reason: str | None = None
     expectation: Literal["fail"] = field(default="fail", init=False)
+
+    @property
+    def payload(self) -> JSONValue:
+        """The exact JSON body to supply to the system under test."""
+        return self.value
 
 
 type FixtureCase = SuccessCase[JSONValue] | FailureCase

@@ -5,9 +5,8 @@ from __future__ import annotations
 import math
 from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator, FormatChecker
-
 from riff.errors import GenerationError
+from riff.validation import schema_validator
 
 if TYPE_CHECKING:
     from riff.compiler import SchemaNode
@@ -18,7 +17,7 @@ MAX_MUTATION_SIZE = 1024
 
 def violation_candidates(schema: SchemaNode) -> list[JSONValue]:
     """Prefer same-type boundary violations, with type violations as a fallback."""
-    validator = Draft7Validator(schema.contract, format_checker=FormatChecker())
+    validator = schema_validator(schema.contract, dialect=schema.dialect)
     boundaries = _numeric_boundaries(schema) + _structural_boundaries(schema)
     candidates = [
         value
@@ -73,4 +72,9 @@ def _structural_boundaries(schema: SchemaNode) -> list[JSONValue]:
         candidates.append([None] * (schema.max_items + 1))
     if schema.required or schema.min_properties > 0:
         candidates.append({})
+    if schema.additional is False:
+        name = "extra_invalid"
+        while name in schema.properties:
+            name += "_"
+        candidates.append({name: None})
     return candidates

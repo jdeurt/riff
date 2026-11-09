@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import math
+import re
 import string
 from copy import deepcopy
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from random import Random
 from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator, FormatChecker
 from pydantic import ValidationError
 from rstr import Rstr
 
@@ -26,11 +26,13 @@ from riff.compiler import (
     Strategy,
     ValuesStrategy,
     intersect_nodes,
+    negate_node,
 )
 from riff.contracts import Provider, ProviderContext
 from riff.errors import GenerationError, ProviderError
 from riff.mutations import violation_candidates
-from riff.providers import formatted_value, make_faker, semantic_value
+from riff.providers import STRING_FORMATS, formatted_value, make_faker, semantic_value
+from riff.validation import DRAFT7_DIALECTS, schema_validator
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -41,6 +43,7 @@ if TYPE_CHECKING:
 
 MAX_DEPTH = 32
 MAX_SIZE = 1024
+MAX_UNCONSTRAINED_DEPTH = 5
 STRING_EDGES = ("", " ", "\t\n", "é", "e\u0301", "日本語", "🦊", "\u0000", "'\"\\", "<>&")
 
 
@@ -113,7 +116,11 @@ class Engine:
 
     def _validated_value(self, schema: Node, *, depth: int) -> JSONValue:
         raw = schema if isinstance(schema, bool) else schema.contract
-        validator = Draft7Validator(raw, format_checker=FormatChecker())
+        validator = (
+            schema_validator(raw, dialect=schema.dialect)
+            if isinstance(schema, SchemaNode)
+            else schema_validator(raw)
+        )
         last_error = "no candidate satisfies the schema"
         for _ in range(self.max_attempts):
             try:
@@ -141,8 +148,22 @@ class Engine:
             message = "A false schema has no valid fixtures."
             raise GenerationError(message)
         if schema is True:
-            return self.random.choice([None, False, 0, ""])
+            return self._unconstrained_value(depth=depth)
         return self._schema_candidate(schema, depth=depth)
+
+    def _unconstrained_value(self, *, depth: int) -> JSONValue:
+        choices: list[JSONValue] = [None, False, True, 0, -1, 42, "", "unexpected", "🦊", [], {}]
+        if depth < MAX_UNCONSTRAINED_DEPTH and self.random.randrange(3) == 0:
+            if self.random.randrange(2) == 0:
+                return [
+                    self._candidate(schema=True, depth=depth + 1)
+                    for _ in range(self.random.randrange(3))
+                ]
+            return {
+                f"nested_{index}": self._candidate(schema=True, depth=depth + 1)
+                for index in range(self.random.randrange(3))
+            }
+        return self.random.choice(choices)
 
     def _schema_candidate(self, schema: SchemaNode, *, depth: int) -> JSONValue:
         source = schema.fixture
@@ -163,6 +184,8 @@ class Engine:
         return self._structural_value(schema, depth=depth)
 
     def _structural_value(self, schema: SchemaNode, *, depth: int) -> JSONValue:
+        if schema.condition is not None:
+            return self._conditional_value(schema, depth=depth)
         if schema.all_of:
             hint: Node = schema.model_copy(deep=True)
             hint.all_of = []
@@ -177,6 +200,24 @@ class Engine:
             hint = intersect_nodes(siblings, self.random.choice(alternatives))
             return self._candidate(hint, depth=depth + 1)
         return self._typed_value(schema, depth=depth)
+
+    def _conditional_value(self, schema: SchemaNode, *, depth: int) -> JSONValue:
+        base = schema.model_copy(deep=True)
+        base.condition = None
+        base.then_schema = None
+        base.else_schema = None
+        condition = schema.condition
+        if condition is None:
+            return self._candidate(base, depth=depth + 1)
+        if self.random.randrange(2) == 0:
+            hint = intersect_nodes(base, condition)
+            if schema.then_schema is not None:
+                hint = intersect_nodes(hint, schema.then_schema)
+        else:
+            hint = intersect_nodes(base, negate_node(condition, dialect=schema.dialect))
+            if schema.else_schema is not None:
+                hint = intersect_nodes(hint, schema.else_schema)
+        return self._candidate(hint, depth=depth + 1)
 
     def _typed_value(self, schema: SchemaNode, *, depth: int) -> JSONValue:
         field_type = self._choose_type(schema)
@@ -236,7 +277,7 @@ class Engine:
             if isinstance(strategy.predicate, bool)
             else strategy.predicate.contract
         )
-        validator = Draft7Validator(predicate, format_checker=FormatChecker())
+        validator = schema_validator(predicate)
         for _ in range(self.max_attempts):
             value = self._strategy_value(strategy.strategy, schema, depth=depth + 1)
             if validator.is_valid(value):
@@ -259,7 +300,7 @@ class Engine:
         return self.fakers[locale]
 
     def _string(self, schema: SchemaNode) -> str:
-        if schema.format is not None and schema.format not in {"int32", "int64", "float", "double"}:
+        if schema.format is not None and schema.format in STRING_FORMATS:
             return formatted_value(schema.format, self._faker(), self.random)
         if schema.pattern is not None:
             value = self.regex.xeger(schema.pattern)
@@ -321,19 +362,65 @@ class Engine:
         return int(value) if integer else float(value)
 
     def _array(self, schema: SchemaNode, *, depth: int) -> list[JSONValue]:
-        size = self._size(minimum=schema.min_items, maximum=schema.max_items, default=5)
+        minimum = schema.min_items
+        if schema.contains is not None:
+            minimum = max(
+                minimum,
+                schema.min_contains if schema.dialect.rstrip("#") not in DRAFT7_DIALECTS else 1,
+            )
+        maximum = schema.max_items
+        tuple_items = schema.items if isinstance(schema.items, list) else schema.prefix_items
+        closed_tuple = (isinstance(schema.items, list) and schema.additional_items is False) or (
+            not isinstance(schema.items, list) and schema.items is False
+        )
+        closed_unevaluated = (
+            schema.unevaluated_items is False
+            and not schema.items_applied
+            and not schema.additional_items_applied
+            and schema.contains is None
+        )
+        if closed_tuple or closed_unevaluated:
+            maximum = min(maximum, len(tuple_items)) if maximum is not None else len(tuple_items)
+        size = self._size(minimum=minimum, maximum=maximum, default=5)
         values: list[JSONValue] = []
-        for _ in range(size):
+        for index in range(size):
+            item_schema = schema.item_schema(index)
             for _ in range(self.max_attempts):
-                value = self._validated_value(schema.items, depth=depth + 1)
+                value = self._validated_value(item_schema, depth=depth + 1)
                 if not schema.unique_items or not any(
-                    Draft7Validator({"const": previous}).is_valid(value) for previous in values
+                    schema_validator({"const": previous}).is_valid(value) for previous in values
                 ):
                     values.append(value)
                     break
             else:
                 message = "Unable to generate enough distinct array items."
                 raise GenerationError(message)
+        return self._satisfy_contains(schema, values, depth=depth)
+
+    def _satisfy_contains(
+        self, schema: SchemaNode, values: list[JSONValue], *, depth: int
+    ) -> list[JSONValue]:
+        if schema.contains is None:
+            return values
+        raw = schema.contains if isinstance(schema.contains, bool) else schema.contains.contract
+        checker = schema_validator(raw, dialect=schema.dialect)
+        minimum = schema.min_contains if schema.dialect.rstrip("#") not in DRAFT7_DIALECTS else 1
+        maximum = schema.max_contains if schema.dialect.rstrip("#") not in DRAFT7_DIALECTS else None
+        for index in range(len(values)):
+            matches = sum(checker.is_valid(value) for value in values)
+            too_few = matches < minimum and not checker.is_valid(values[index])
+            too_many = maximum is not None and matches > maximum and checker.is_valid(values[index])
+            if not too_few and not too_many:
+                continue
+            desired = (
+                schema.contains if too_few else negate_node(schema.contains, dialect=schema.dialect)
+            )
+            hint = intersect_nodes(schema.item_schema(index), desired)
+            try:
+                values[index] = self._validated_value(hint, depth=depth + 1)
+            except GenerationError:
+                if self.remaining_candidates <= 0:
+                    raise
         return values
 
     def _object(self, schema: SchemaNode, *, depth: int) -> dict[str, JSONValue]:
@@ -344,23 +431,125 @@ class Engine:
             if name not in selected and child is not False
         ]
         self.random.shuffle(optional)
+        extra_allowed = schema.additional is not False and (
+            schema.unevaluated_properties is not False or schema.additional_applied
+        )
+        extra_capacity = 2 if extra_allowed or schema.patterns else 0
         minimum = max(schema.min_properties, len(selected))
-        default_maximum = max(len(schema.properties), minimum)
+        default_maximum = max(len(schema.properties) + extra_capacity, minimum)
         wanted = self._size(minimum=minimum, maximum=schema.max_properties, default=default_maximum)
         selected.extend(optional[: max(0, wanted - len(selected))])
+        selected = self._dependent_keys(schema, selected, depth=depth)
+        dependency_hint = self._dependency_hint(schema, selected)
+        if isinstance(dependency_hint, SchemaNode):
+            return self._object(dependency_hint, depth=depth + 1)
+        if dependency_hint is False:
+            message = "Triggered dependency has no object values."
+            raise GenerationError(message)
         values = {
-            name: self._validated_value(
-                schema.properties.get(name, schema.additional), depth=depth + 1
-            )
+            name: self._validated_value(self._property_schema(schema, name), depth=depth + 1)
             for name in selected
         }
-        if schema.additional is False:
+        return self._additional_values(
+            schema, values, wanted=wanted, extra_allowed=extra_allowed, depth=depth
+        )
+
+    def _dependent_keys(self, schema: SchemaNode, selected: list[str], *, depth: int) -> list[str]:
+        dependencies = dict(schema.dependent_required)
+        for name, dependency in schema.dependencies.items():
+            if isinstance(dependency, list):
+                dependencies[name] = [*dependencies.get(name, []), *dependency]
+        required = list(selected)
+        for _ in range(len(dependencies) + 1):
+            self._spend_candidate(depth=depth)
+            additions = [
+                child
+                for name in required
+                for child in dependencies.get(name, [])
+                if child not in required
+            ]
+            if not additions:
+                break
+            required.extend(dict.fromkeys(additions))
+        return required
+
+    def _dependency_hint(self, schema: SchemaNode, selected: list[str]) -> Node | None:
+        triggered = {
+            name: child for name, child in schema.dependent_schemas.items() if name in selected
+        }
+        triggered.update(
+            {
+                name: child
+                for name, child in schema.dependencies.items()
+                if name in selected and not isinstance(child, list)
+            }
+        )
+        if not triggered:
+            return None
+        hint: Node = schema.model_copy(deep=True)
+        hint.dependent_schemas = {
+            name: child for name, child in schema.dependent_schemas.items() if name not in triggered
+        }
+        hint.dependencies = {
+            name: child for name, child in schema.dependencies.items() if name not in triggered
+        }
+        for child in triggered.values():
+            hint = intersect_nodes(hint, child)
+        return hint
+
+    def _property_schema(self, schema: SchemaNode, name: str) -> Node:
+        matches = [child for pattern, child in schema.patterns.items() if re.search(pattern, name)]
+        if name not in schema.properties and not matches:
+            if (
+                "additionalProperties" not in schema.contract
+                and schema.unevaluated_properties is not None
+            ):
+                return schema.unevaluated_properties
+            return (
+                schema.additional
+                if schema.unevaluated_properties is not False or schema.additional_applied
+                else False
+            )
+        hint = schema.properties.get(name, True)
+        for child in matches:
+            hint = intersect_nodes(hint, child)
+        return hint
+
+    def _additional_values(
+        self,
+        schema: SchemaNode,
+        values: dict[str, JSONValue],
+        *,
+        wanted: int,
+        extra_allowed: bool,
+        depth: int,
+    ) -> dict[str, JSONValue]:
+        if not extra_allowed and not schema.patterns:
             return values
-        for index in range(len(schema.properties) + wanted):
+        for index in range(self.max_attempts * 100):
             if len(values) >= wanted:
                 break
             self._spend_candidate(depth=depth)
-            name = f"extra_{index}"
-            if name not in values and name not in schema.properties:
-                values[name] = self._validated_value(schema.additional, depth=depth + 1)
+            name = self._extra_name(schema, index, depth=depth)
+            if name in values or name in schema.properties:
+                continue
+            hint = self._property_schema(schema, name)
+            if hint is not False:
+                values[name] = self._validated_value(hint, depth=depth + 1)
         return values
+
+    def _extra_name(self, schema: SchemaNode, index: int, *, depth: int) -> str:
+        patterns = list(schema.patterns)
+        if patterns and (schema.additional is False or index % 2 == 0):
+            return self.regex.xeger(patterns[index % len(patterns)])
+        if schema.property_names is not None:
+            hint = intersect_nodes(
+                SchemaNode.model_validate({"type": "string"}), schema.property_names
+            )
+            name = self._validated_value(hint, depth=depth + 1)
+            if isinstance(name, str):
+                return name
+            message = "propertyNames did not produce a string key."
+            raise GenerationError(message)
+        prefixes = ("extra", "unknown", "garbage")
+        return f"{prefixes[index % len(prefixes)]}_{index}"

@@ -27,8 +27,9 @@ for case in factory.generate_cases(count=30, seed=42, expectation="fail"):
 
 For a model-first application, `FixtureFactory.for_model(RequestModel)` returns
 validated request models from `.generate()` and typed cases from
-`.success_cases()`. Send `.value.model_dump()` through your client. The supplied
-example covers both OpenAPI-first and model-first generation.
+`.success_cases()`. Send `case.payload` through your client; it retains generated
+extra fields. The supplied example covers both OpenAPI-first and model-first
+generation.
 
 ## An endpoint that calls a vendor
 
@@ -44,7 +45,8 @@ null or a number, and the application must return HTTP 502. Status failures set
 `inactive`, which remains schema-valid, and the application must return HTTP 409.
 The test's expected statuses are application requirements, not inferred from Riff.
 
-Typed successful cases expose fields directly. Failure cases stay raw because
+Typed successful cases expose fields through `case.value`; their original JSON
+is `case.payload`, including permitted extra keys. Failure cases stay raw because
 malformed values cannot honestly be represented as a validated customer model.
 If you inspect raw fields, narrow them at that test boundary before using them.
 

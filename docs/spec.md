@@ -53,9 +53,12 @@ registered providers rather than language-specific expressions in the schema.
 ## 3. Inputs and schema selection
 
 An implementation MUST accept a standalone schema in its advertised supported
-subset. It SHOULD accept OpenAPI 3.0 and 3.1 documents and select either an
+validation vocabularies and MUST identify the selected JSON Schema dialect.
+It SHOULD accept OpenAPI 3.0 and 3.1 documents and select either an
 operation's request-body schema or an exact response status and media type.
-Status selection MUST be explicit; a missing exact response MUST NOT silently
+An OpenAPI 3.1 implementation MUST honor `jsonSchemaDialect` when supported,
+with an explicit schema `$schema` taking precedence. Status selection MUST be
+explicit; a missing exact response MUST NOT silently
 select a different status. Path templates are used as written in the document.
 
 Local acyclic JSON Pointer references MUST resolve against the supplied document.
@@ -75,9 +78,23 @@ keywords rather than silently weaken them. Read/write annotations, defaults,
 examples outside `x-fixture`, descriptions, and discriminators are informational
 in this draft; they do not automatically add, remove, or correlate fields.
 
+Object generation SHOULD explore extra keys when `additionalProperties` is true
+or omitted, respecting property-count limits. A schema-valued additional rule
+MUST validate those values; false MUST forbid unmatched keys. Pattern-matched
+keys are governed by their matching schemas. Unevaluated rules and active
+composition/dependency/conditional scopes MUST participate in validation.
+
+Implementations SHOULD support the ordinary validation vocabularies of their
+advertised dialects: scalar constraints, compositions/negation, conditionals,
+object dependencies and names, prefix/tuple/item rules, contains counts, and
+unevaluated rules. Inactive keywords from other dialects MUST NOT be imposed as
+generation constraints. Unknown formats remain annotations; implementations MUST
+document recognized format assertions. Validation coverage does not imply a
+complete generator for every satisfiable combination.
+
 ## 4. Portable fixture metadata
 
-`x-fixture` MAY annotate any schema node:
+`x-fixture` MAY annotate schemas describing generated values:
 
 ```yaml
 x-fixture:
@@ -188,7 +205,7 @@ Explicit strategies take precedence over generation-profile preferences.
 
 ## 6. Provider contract
 
-A provider receives a fresh context containing:
+A custom provider receives a fresh context containing:
 
 - `seed`: a lossless unsigned 64-bit per-invocation seed;
 - `locale`: the requested locale;
@@ -201,6 +218,8 @@ for randomness, avoid wall-clock-dependent values, and avoid external state.
 Context objects MUST be isolated from the compiled contract. Calling a provider
 MUST NOT give it mutable access to another invocation's context.
 
+Built-in providers MUST obey the same JSON validity, deterministic replay, and
+isolation rules; implementations MAY optimize their internal calling convention.
 Custom registrations MAY override built-in names. Built-in semantic names are
 `email`, `full-name`, `company-name`, `url`, `phone-number`, `city`, `country-code`,
 and `uuid`. Their exact text is not standardized. Defaults are string providers;
@@ -245,8 +264,10 @@ A case contains `value`, `expectation` (`pass` or `fail`), `schema_valid`, and
 `violations`. Fail cases additionally identify `target` as a JSON Pointer and MAY
 include `reason`. A violation contains its JSON Pointer and a diagnostic message.
 The root pointer is the empty string. Diagnostics need not match across backends.
-Type systems SHOULD distinguish validated successful values from raw, possibly
-malformed failure values. Runtime schema constraints MUST still be checked.
+Type systems SHOULD distinguish validated successful views from raw, possibly
+malformed failure values. Implementations with typed model views SHOULD retain
+the original JSON payload so model projection does not discard generated extras.
+Runtime schema constraints MUST still be checked.
 
 ## 9. Budgets, reproducibility, and replay
 

@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from riff import Failure, fixture
+
 
 class Customer(BaseModel):
     """Fields consumed by the welcome operation."""
@@ -21,12 +23,10 @@ class Registration(BaseModel):
     name: str = Field(
         min_length=1,
         max_length=64,
-        json_schema_extra={
-            "x-fixture": {"provider": "full-name", "fail": {"examples": ["", None]}}
-        },
+        json_schema_extra=fixture(provider="full-name", fail=Failure(examples=["", None])),
     )
     seats: int = Field(
-        ge=1, le=50, json_schema_extra={"x-fixture": {"fail": {"examples": [0, 51, "many"]}}}
+        ge=1, le=50, json_schema_extra=fixture(fail=Failure(examples=[0, 51, "many"]))
     )
 
 

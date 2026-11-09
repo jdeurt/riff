@@ -4,6 +4,12 @@ info:
   version: '1.0'
 paths:
   /customers/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
     get:
       responses:
         '200':

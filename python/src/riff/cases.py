@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator, FormatChecker
-
-from riff.compiler import JSON_ADAPTER
+from riff.compiler import JSON_ADAPTER, SchemaNode, accepts_value, applicable_branches
 from riff.contracts import FailureCase, FixtureCase, SuccessCase, Violation
 from riff.errors import GenerationError
+from riff.validation import schema_validator
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    from riff.compiler import FailureSource, Node, SchemaNode
+    from riff.compiler import FailureSource, Node
     from riff.engine import Engine
     from riff.types import Expectation, JSONValue
 
@@ -34,7 +34,10 @@ def generate_cases(
 ) -> list[FixtureCase]:
     """Generate labels supplied by the caller, independently of schema validity."""
     if expectation == "pass":
-        return [SuccessCase(value) for value in engine.generate(schema, count=count)]
+        return [
+            SuccessCase(value=value, payload=value)
+            for value in engine.generate(schema, count=count)
+        ]
     if expectation == "fail":
         return list(generate_failure_cases(schema, engine, count=count))
     message = f"Unknown case expectation: {expectation}"
@@ -63,11 +66,11 @@ def _failure_case(schema: Node, engine: Engine) -> FailureCase:
             message = f"Unable to generate a JSON failure replacement: {error}"
             raise GenerationError(message) from error
         mutated = _replace(value, target.tokens, replacement)
-        if Draft7Validator({"const": value}).is_valid(mutated):
+        if schema_validator({"const": value}).is_valid(mutated):
             continue
         violations = tuple(
             Violation(_pointer(list(error.absolute_path)), error.message)
-            for error in Draft7Validator(raw, format_checker=FormatChecker()).iter_errors(mutated)
+            for error in schema_validator(raw).iter_errors(mutated)
         )
         return FailureCase(
             value=mutated,
@@ -90,17 +93,81 @@ def _failure_targets(
     if schema.fixture.fail is not None:
         yield FailureTarget(tokens, schema, schema.fixture.fail)
     if isinstance(value, dict):
-        for name, child in schema.properties.items():
-            yield from _failure_targets(child, value.get(name), (*tokens, name))
+        yield from _object_failure_targets(schema, value, tokens)
     if isinstance(value, list):
-        for index, item in enumerate(value):
-            yield from _failure_targets(schema.items, item, (*tokens, index))
-    for branch in schema.all_of:
+        yield from _array_failure_targets(schema, value, tokens)
+    for branch in applicable_branches(schema, value):
         yield from _failure_targets(branch, value, tokens)
-    for branch in [*schema.one_of, *schema.any_of]:
-        raw = branch if isinstance(branch, bool) else branch.contract
-        if Draft7Validator(raw, format_checker=FormatChecker()).is_valid(value):
-            yield from _failure_targets(branch, value, tokens)
+
+
+def _object_failure_targets(
+    schema: SchemaNode, value: dict[str, JSONValue], tokens: tuple[str | int, ...]
+) -> Iterator[FailureTarget]:
+    for name, child in schema.properties.items():
+        yield from _failure_targets(child, value.get(name), (*tokens, name))
+    for name, item in value.items():
+        matches = [child for pattern, child in schema.patterns.items() if re.search(pattern, name)]
+        for child in matches:
+            yield from _failure_targets(child, item, (*tokens, name))
+        if name not in schema.properties and not matches:
+            yield from _failure_targets(schema.additional, item, (*tokens, name))
+    if schema.unevaluated_properties is not None:
+        evaluated = _evaluated_keys(schema, value, include_unevaluated=False)
+        for name in value.keys() - evaluated:
+            yield from _failure_targets(schema.unevaluated_properties, value[name], (*tokens, name))
+
+
+def _array_failure_targets(
+    schema: SchemaNode, value: list[JSONValue], tokens: tuple[str | int, ...]
+) -> Iterator[FailureTarget]:
+    evaluated_items = _evaluated_items(schema, value, include_unevaluated=False)
+    for index, item in enumerate(value):
+        # Use the declared item schema; unevaluated annotations are applied below.
+        declared = schema.model_copy()
+        declared.unevaluated_items = None
+        yield from _failure_targets(declared.item_schema(index), item, (*tokens, index))
+        if schema.contains is not None and accepts_value(schema.contains, item):
+            yield from _failure_targets(schema.contains, item, (*tokens, index))
+        if schema.unevaluated_items is not None and index not in evaluated_items:
+            yield from _failure_targets(schema.unevaluated_items, item, (*tokens, index))
+
+
+def _evaluated_keys(
+    schema: SchemaNode, value: dict[str, JSONValue], *, include_unevaluated: bool
+) -> set[str]:
+    evaluated = set(schema.properties).intersection(value)
+    evaluated.update(
+        name for name in value for pattern in schema.patterns if re.search(pattern, name)
+    )
+    if "additionalProperties" in schema.contract or (
+        include_unevaluated and schema.unevaluated_properties is not None
+    ):
+        return set(value)
+    for branch in applicable_branches(schema, value):
+        if isinstance(branch, SchemaNode):
+            evaluated.update(_evaluated_keys(branch, value, include_unevaluated=True))
+    return evaluated
+
+
+def _evaluated_items(
+    schema: SchemaNode, value: list[JSONValue], *, include_unevaluated: bool
+) -> set[int]:
+    if ("items" in schema.contract and not isinstance(schema.items, list)) or (
+        isinstance(schema.items, list) and "additionalItems" in schema.contract
+    ):
+        return set(range(len(value)))
+    if include_unevaluated and schema.unevaluated_items is not None:
+        return set(range(len(value)))
+    prefix = schema.items if isinstance(schema.items, list) else schema.prefix_items
+    evaluated = set(range(min(len(value), len(prefix))))
+    if schema.contains is not None:
+        evaluated.update(
+            index for index, item in enumerate(value) if accepts_value(schema.contains, item)
+        )
+    for branch in applicable_branches(schema, value):
+        if isinstance(branch, SchemaNode):
+            evaluated.update(_evaluated_items(branch, value, include_unevaluated=True))
+    return evaluated
 
 
 def _replace(value: JSONValue, tokens: tuple[str | int, ...], replacement: JSONValue) -> JSONValue:

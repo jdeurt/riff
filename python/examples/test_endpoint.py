@@ -27,7 +27,7 @@ async def call_welcome(body: JSONValue) -> httpx.Response:
 
 @pytest.mark.parametrize("case", FACTORY.success_cases(count=20, seed=42))
 def test_successful_customer_welcome(case: SuccessCase[Customer]) -> None:
-    body = case.value.model_dump(mode="json")
+    body = case.payload
     response = asyncio.run(call_welcome(body))
     assert response.status_code == 200
     welcome = Welcome.model_validate_json(response.content)

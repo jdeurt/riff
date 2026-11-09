@@ -5,12 +5,12 @@ from __future__ import annotations
 import json
 from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator, FormatChecker
 from pydantic import BaseModel, ValidationError
 
 from riff.compiler import JSON_ADAPTER
 from riff.contracts import FailureCase, SuccessCase
 from riff.errors import GenerationError
+from riff.validation import schema_validator
 
 if TYPE_CHECKING:
     from riff.factory import FixtureFactory
@@ -24,7 +24,7 @@ class ModelFactory[ModelT: BaseModel]:
         """Retain the compiled factory and its caller-selected result model."""
         self._factory = factory
         self._model = model
-        self._validator = Draft7Validator(schema, format_checker=FormatChecker())
+        self._validator = schema_validator(schema)
 
     def generate(
         self,
@@ -49,12 +49,10 @@ class ModelFactory[ModelT: BaseModel]:
         max_attempts: int = 100,
     ) -> list[SuccessCase[ModelT]]:
         """Return model-typed values in positively tagged case envelopes."""
-        return [
-            SuccessCase(value)
-            for value in self.generate(
-                count=count, seed=seed, profile=profile, max_attempts=max_attempts
-            )
-        ]
+        values = self._factory.generate(
+            count=count, seed=seed, profile=profile, max_attempts=max_attempts
+        )
+        return [SuccessCase(value=self._decode(value), payload=value) for value in values]
 
     def failure_cases(
         self,

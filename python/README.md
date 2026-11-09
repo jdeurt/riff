@@ -14,7 +14,8 @@ Run these commands from `python/`. Development dependencies include the tools
 and libraries used by the examples; production dependencies are declared
 separately. The workspace lockfile is at the repository root.
 
-See the [quick start](../docs/quickstart.md), [API reference](../docs/python-api.md),
-[provider guide](../docs/providers.md), [strategy guide](../docs/strategies.md),
-[sidecar guide](../docs/sidecars.md), [dogfooding guide](../docs/dogfooding.md),
-and [endpoint testing guide](../docs/testing.md).
+Start with the [quick start](../docs/quickstart.md). Then choose
+[typed metadata](../docs/model-metadata.md) or [sidecar annotations](../docs/sidecars.md),
+and follow the [endpoint testing guide](../docs/testing.md).
+The [API reference](../docs/python-api.md) covers signatures, errors, and limits;
+the [root guide index](../README.md#guides) links the remaining topics.

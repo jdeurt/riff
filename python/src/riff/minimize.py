@@ -6,10 +6,10 @@ from copy import deepcopy
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from jsonschema import Draft7Validator, FormatChecker
 from pydantic import BaseModel, ConfigDict, Field
 
 from riff.compiler import JSON_ADAPTER
+from riff.validation import schema_validator
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
@@ -45,7 +45,7 @@ def minimize(
     """Keep reductions that still fail; schema preservation is caller-controlled."""
     options = MinimizationOptions(max_evaluations=max_evaluations, preserve_schema=preserve_schema)
     current = JSON_ADAPTER.validate_python(value)
-    validator = Draft7Validator(schema, format_checker=FormatChecker())
+    validator = schema_validator(schema)
     if preserve_schema and not validator.is_valid(current):
         message = (
             "Initial value violates the schema; use preserve_schema=False for malformed cases."
@@ -57,7 +57,7 @@ def minimize(
     evaluations = 1
     while evaluations < options.max_evaluations:
         for candidate in _reductions(current):
-            if Draft7Validator({"const": current}).is_valid(candidate):
+            if schema_validator({"const": current}).is_valid(candidate):
                 continue
             if preserve_schema and not validator.is_valid(candidate):
                 continue

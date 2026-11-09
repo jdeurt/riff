@@ -169,10 +169,8 @@ def test_parallel_batches_do_not_change_replay() -> None:
         {"$ref": "https://example.test/schema.json"},
         {"$ref": "#"},
         {"$ref": "#/missing"},
-        {"type": "string", "format": "unknown"},
         {"type": "string", "x-fixture": {"provider": "typo"}},
         {"type": "string", "x-fixture": {"examples": [42]}},
-        {"type": "array", "prefixItems": [{"type": "string"}]},
     ],
 )
 def test_bad_contracts_fail_before_generation(schema: dict[str, JSONValue]) -> None:

@@ -15,13 +15,19 @@ strategies can violate them.
 
 ## Guides
 
+Start with the quick start, then choose typed model annotations or a YAML sidecar.
+The endpoint guide shows how those fixtures enter real tests.
+
 - [Quick start](docs/quickstart.md)
+- [Typed model metadata](docs/model-metadata.md)
 - [Sidecar fixture files](docs/sidecars.md)
-- [Dogfooding Riff](docs/dogfooding.md)
+- [Testing your own endpoints and vendor consumers](docs/testing.md)
 - [Strategies, filtering, and minimization](docs/strategies.md)
 - [Custom providers](docs/providers.md)
-- [Testing your own endpoints and vendor consumers](docs/testing.md)
-- [Python API](docs/python-api.md)
+- [JSON Schema constraints](docs/json-schema.md)
+- [Publishing a clean OpenAPI spec](docs/publishing-openapi.md)
+- [Dogfooding Riff](docs/dogfooding.md)
+- [Python API reference](docs/python-api.md)
 - [Portable specification](docs/spec.md)
 
 ## Python development

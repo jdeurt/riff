@@ -6,17 +6,32 @@ import re
 from typing import TYPE_CHECKING
 from urllib.parse import unquote
 
-from jsonschema import Draft7Validator
 from jsonschema.exceptions import SchemaError as ValidationSchemaError
 
 from riff.errors import SchemaError
+from riff.validation import SUPPORTED_DIALECTS, schema_validator
 
 if TYPE_CHECKING:
     from riff.types import JSONValue, Schema
 
-SCHEMA_MAPS = frozenset({"properties", "patternProperties"})
-SCHEMA_LISTS = frozenset({"allOf", "anyOf", "oneOf"})
-SCHEMA_CHILDREN = frozenset({"items", "additionalProperties", "not", "contains"})
+SCHEMA_MAPS = frozenset({"properties", "patternProperties", "dependentSchemas"})
+SCHEMA_LISTS = frozenset({"allOf", "anyOf", "oneOf", "prefixItems"})
+SCHEMA_CHILDREN = frozenset(
+    {
+        "items",
+        "additionalItems",
+        "additionalProperties",
+        "not",
+        "contains",
+        "if",
+        "then",
+        "else",
+        "propertyNames",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "contentSchema",
+    }
+)
 SUPPORTED_KEYWORDS = frozenset(
     {
         "$schema",
@@ -62,10 +77,24 @@ SUPPORTED_KEYWORDS = frozenset(
         "not",
         "contains",
         "nullable",
+        "prefixItems",
+        "additionalItems",
+        "minContains",
+        "maxContains",
+        "dependentRequired",
+        "dependentSchemas",
+        "dependencies",
+        "propertyNames",
+        "unevaluatedProperties",
+        "unevaluatedItems",
+        "if",
+        "then",
+        "else",
+        "$comment",
+        "contentEncoding",
+        "contentMediaType",
+        "contentSchema",
     }
-)
-SUPPORTED_DIALECTS = frozenset(
-    {"http://json-schema.org/draft-07/schema#", "https://json-schema.org/draft-07/schema"}
 )
 
 
@@ -113,11 +142,17 @@ def dereference_object(document: JSONValue, value: JSONValue) -> dict[str, JSONV
     return value
 
 
-def normalize_schema(schema: JSONValue, document: JSONValue, *, openapi30: bool) -> Schema:
+def normalize_schema(
+    schema: JSONValue, document: JSONValue, *, openapi30: bool, dialect: str | None = None
+) -> Schema:
     """Inline reachable references, normalize OpenAPI 3.0 bounds, and validate."""
     normalized = _normalize(schema, document, openapi30=openapi30, references=())
+    if dialect is not None:
+        _validate_dialect(dialect)
+        if isinstance(normalized, dict):
+            normalized = {"$schema": dialect, **normalized}
     try:
-        Draft7Validator.check_schema(normalized)
+        schema_validator(normalized).check_schema(normalized)
     except ValidationSchemaError as error:
         message = f"Invalid schema: {error.message}"
         raise SchemaError(message) from error
@@ -144,6 +179,7 @@ def _normalize(
             continue
         if key == "$schema":
             _validate_dialect(value)
+            result[key] = value
             continue
         if key not in SUPPORTED_KEYWORDS and not key.startswith("x-"):
             message = f"Unsupported schema keyword: {key}"
@@ -160,8 +196,8 @@ def _normalize(
 
 
 def _validate_dialect(value: JSONValue) -> None:
-    if not isinstance(value, str) or value not in SUPPORTED_DIALECTS:
-        message = "Standalone schemas must use the supported Draft 7 subset."
+    if not isinstance(value, str) or value.rstrip("#") not in SUPPORTED_DIALECTS:
+        message = "Unsupported JSON Schema dialect."
         raise SchemaError(message)
 
 
@@ -202,6 +238,18 @@ def _normalize_children(
             _normalize(child, document, openapi30=openapi30, references=references)
             for child in value
         ]
+    if key == "items" and isinstance(value, list):
+        return [
+            _normalize(child, document, openapi30=openapi30, references=references)
+            for child in value
+        ]
+    if key == "dependencies" and isinstance(value, dict):
+        return {
+            name: child
+            if isinstance(child, list)
+            else _normalize(child, document, openapi30=openapi30, references=references)
+            for name, child in value.items()
+        }
     if key in SCHEMA_CHILDREN:
         return _normalize(value, document, openapi30=openapi30, references=references)
     return value

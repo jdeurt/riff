@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Annotated, Literal, Self
 
 from faker.config import AVAILABLE_LOCALES
-from jsonschema import Draft7Validator, FormatChecker
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -14,13 +13,15 @@ from pydantic import (
     PrivateAttr,
     TypeAdapter,
     ValidationError,
+    field_serializer,
     field_validator,
     model_validator,
 )
 
 from riff.errors import SchemaError
 from riff.schema import normalize_schema
-from riff.types import JSONValue
+from riff.types import JSONValue, Schema
+from riff.validation import DEFAULT_DIALECT, DRAFT7_DIALECTS, schema_validator
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Mapping
@@ -32,22 +33,6 @@ JSON_ADAPTER = TypeAdapter[JSONValue](
 )
 BUILTINS = frozenset(
     {"email", "full-name", "company-name", "url", "phone-number", "city", "country-code", "uuid"}
-)
-FORMATS = frozenset(
-    {
-        "email",
-        "uuid",
-        "uri",
-        "hostname",
-        "ipv4",
-        "ipv6",
-        "date",
-        "date-time",
-        "int32",
-        "int64",
-        "float",
-        "double",
-    }
 )
 
 
@@ -98,8 +83,26 @@ class FilterStrategy(StrategyModel):
     @classmethod
     def compile_predicate(cls, value: object) -> JSONValue:
         """Resolve and validate predicate schemas at the metadata boundary."""
-        document = JSON_ADAPTER.validate_python(value)
+        document = (
+            value.contract if isinstance(value, SchemaNode) else JSON_ADAPTER.validate_python(value)
+        )
         return normalize_schema(document, document, openapi30=False)
+
+    @classmethod
+    def where(cls, strategy: Strategy, *, schema: Schema) -> Self:
+        """Construct a typed filter directly from an ordinary predicate schema."""
+        return cls.model_validate(
+            {
+                "kind": "filter",
+                "strategy": strategy.model_dump(mode="json", by_alias=True, exclude_unset=True),
+                "schema": schema,
+            }
+        )
+
+    @field_serializer("predicate")
+    def serialize_predicate(self, predicate: Node) -> Schema:
+        """Preserve the predicate's declared dialect and complete schema on export."""
+        return predicate if isinstance(predicate, bool) else predicate.contract
 
 
 type Strategy = Annotated[
@@ -172,7 +175,27 @@ class SchemaNode(BaseModel):
     required: list[str] = Field(default_factory=list)
     additional: Node = Field(default=True, alias="additionalProperties")
     patterns: dict[str, Node] = Field(default_factory=dict, alias="patternProperties")
-    items: Node = True
+    items: Node | list[Node] = True
+    prefix_items: list[Node] = Field(default_factory=list, alias="prefixItems")
+    additional_items: Node = Field(default=True, alias="additionalItems")
+    min_contains: int = Field(default=1, alias="minContains")
+    max_contains: int | None = Field(default=None, alias="maxContains")
+    property_names: Node | None = Field(default=None, alias="propertyNames")
+    dependent_required: dict[str, list[str]] = Field(
+        default_factory=dict, alias="dependentRequired"
+    )
+    dependent_schemas: dict[str, Node] = Field(default_factory=dict, alias="dependentSchemas")
+    dependencies: dict[str, Node | list[str]] = Field(default_factory=dict)
+    condition: Node | None = Field(default=None, alias="if")
+    then_schema: Node | None = Field(default=None, alias="then")
+    else_schema: Node | None = Field(default=None, alias="else")
+    unevaluated_properties: Node | None = Field(default=None, alias="unevaluatedProperties")
+    unevaluated_items: Node | None = Field(default=None, alias="unevaluatedItems")
+    content_schema: Node | None = Field(default=None, alias="contentSchema")
+    dialect: str = Field(default=DEFAULT_DIALECT, exclude=True)
+    items_applied: bool = Field(default=False, exclude=True)
+    additional_applied: bool = Field(default=False, exclude=True)
+    additional_items_applied: bool = Field(default=False, exclude=True)
     all_of: list[Node] = Field(default_factory=list, alias="allOf")
     any_of: list[Node] = Field(default_factory=list, alias="anyOf")
     one_of: list[Node] = Field(default_factory=list, alias="oneOf")
@@ -204,6 +227,11 @@ class SchemaNode(BaseModel):
             message = "Expected a schema object"
             raise TypeError(message)
         parsed.contract = contract
+        parsed.items_applied = "items" in contract and not isinstance(contract["items"], list)
+        parsed.additional_applied = "additionalProperties" in contract
+        parsed.additional_items_applied = (
+            isinstance(parsed.items, list) and "additionalItems" in contract
+        )
         return parsed
 
     @property
@@ -216,19 +244,81 @@ class SchemaNode(BaseModel):
         """Keep changes to the schema representation inside its owning module."""
         self._contract = value
 
+    def item_schema(self, index: int) -> Node:
+        """Apply tuple/prefix semantics in the schema's inherited dialect."""
+        if isinstance(self.items, list):
+            return self._tuple_item_schema(self.items, index)
+        modern = (
+            self.dialect.rstrip("#") not in DRAFT7_DIALECTS
+            and self.dialect != "https://json-schema.org/draft/2019-09/schema"
+        )
+        if modern and index < len(self.prefix_items):
+            return self.prefix_items[index]
+        if not self.items_applied and self.unevaluated_items is not None:
+            if self.contains is None:
+                return self.unevaluated_items
+            if self.unevaluated_items is False:
+                return self.contains
+        return self.items
+
+    def _tuple_item_schema(self, items: list[Node], index: int) -> Node:
+        if index < len(items):
+            return items[index]
+        if (
+            not self.additional_items_applied
+            and not self.items_applied
+            and self.unevaluated_items is not None
+        ):
+            return self.unevaluated_items
+        return self.additional_items
+
+    def child_locations(self) -> Iterator[tuple[tuple[str | int, ...], Node]]:
+        """Describe all schema-bearing locations once for validation and sidecars."""
+        for keyword, mapping in (
+            ("properties", self.properties),
+            ("patternProperties", self.patterns),
+            ("dependentSchemas", self.dependent_schemas),
+        ):
+            for name, child in mapping.items():
+                yield (keyword, name), child
+        for keyword, sequence in (
+            ("allOf", self.all_of),
+            ("oneOf", self.one_of),
+            ("anyOf", self.any_of),
+            ("prefixItems", self.prefix_items),
+        ):
+            for index, child in enumerate(sequence):
+                yield (keyword, index), child
+        if isinstance(self.items, list):
+            for index, child in enumerate(self.items):
+                yield ("items", index), child
+        else:
+            yield ("items",), self.items
+        yield from self._single_child_locations()
+
+    def _single_child_locations(self) -> Iterator[tuple[tuple[str | int, ...], Node]]:
+        for name, dependency in self.dependencies.items():
+            if not isinstance(dependency, list):
+                yield ("dependencies", name), dependency
+        for keyword, child in (
+            ("additionalProperties", self.additional),
+            ("additionalItems", self.additional_items),
+            ("propertyNames", self.property_names),
+            ("if", self.condition),
+            ("then", self.then_schema),
+            ("else", self.else_schema),
+            ("unevaluatedProperties", self.unevaluated_properties),
+            ("unevaluatedItems", self.unevaluated_items),
+            ("not", self.negated),
+            ("contains", self.contains),
+            ("contentSchema", self.content_schema),
+        ):
+            if child is not None:
+                yield (keyword,), child
+
     def children(self) -> Iterator[Node]:
-        """Visit schema children without interpreting metadata as schema data."""
-        yield from self.properties.values()
-        yield from self.patterns.values()
-        yield from self.all_of
-        yield from self.any_of
-        yield from self.one_of
-        yield self.items
-        yield self.additional
-        if self.negated is not None:
-            yield self.negated
-        if self.contains is not None:
-            yield self.contains
+        """Visit schema children while leaving annotation data untouched."""
+        yield from (child for _, child in self.child_locations())
 
 
 type Node = SchemaNode | bool
@@ -246,22 +336,24 @@ def compile_schema(schema: JSONValue, providers: Mapping[str, Provider]) -> Node
     return node
 
 
-def _validate_node(node: Node, providers: Mapping[str, Provider]) -> None:
+def _validate_node(
+    node: Node, providers: Mapping[str, Provider], *, dialect: str = DEFAULT_DIALECT
+) -> None:
     if isinstance(node, bool):
         return
-    if node.format is not None and node.format not in FORMATS:
-        message = f"Unsupported string format: {node.format}"
-        raise SchemaError(message)
+    declared = node.contract.get("$schema")
+    node.dialect = (declared if isinstance(declared, str) else dialect).rstrip("#")
+    _deactivate_inert_keywords(node)
     _validate_source(node.fixture, node, providers, allow_violations=False)
     if node.fixture.fail is not None:
         _validate_source(node.fixture.fail, node, providers, allow_violations=True)
-    validator = Draft7Validator(node.contract, format_checker=FormatChecker())
+    validator = schema_validator(node.contract, dialect=node.dialect)
     for example in node.fixture.examples or []:
         if not validator.is_valid(example):
             message = "x-fixture.examples contains an invalid value"
             raise SchemaError(message)
     for child in node.children():
-        _validate_node(child, providers)
+        _validate_node(child, providers, dialect=node.dialect)
 
 
 def _validate_source(
@@ -281,7 +373,7 @@ def _validate_provider(
     if name not in BUILTINS:
         message = f"Unknown semantic provider: {name}"
         raise SchemaError(message)
-    if node.types != "string" and not (isinstance(node.types, list) and "string" in node.types):
+    if not _permits_string_provider(node):
         message = "Default semantic providers require a string schema"
         raise SchemaError(message)
 
@@ -329,7 +421,7 @@ def intersect_nodes(left: Node, right: Node) -> Node:
     result.min_items = max(left.min_items, right.min_items)
     result.min_properties = max(left.min_properties, right.min_properties)
     result.unique_items = left.unique_items or right.unique_items
-    result.items = intersect_nodes(left.items, right.items)
+    _merge_structural_constraints(result, right)
     _merge_optional_constraints(result, right)
     _merge_sources_and_choices(result, right)
     return result
@@ -400,3 +492,116 @@ def _merge_collection_bounds(result: SchemaNode, right: SchemaNode) -> None:
             if result.max_properties is None
             else min(result.max_properties, right.max_properties)
         )
+
+
+def negate_node(node: Node, *, dialect: str) -> Node:
+    """Compose a typed negation used for conditional and contains exploration."""
+    if isinstance(node, bool):
+        return not node
+    result = SchemaNode.model_validate({"not": node.contract})
+    result.dialect = dialect
+    return result
+
+
+def _merge_structural_constraints(result: SchemaNode, right: SchemaNode) -> None:
+    result.items_applied = result.items_applied or right.items_applied
+    result.additional_applied = result.additional_applied or right.additional_applied
+    result.additional_items_applied = (
+        result.additional_items_applied or right.additional_items_applied
+    )
+    _merge_array_constraints(result, right)
+    result.patterns.update(right.patterns)
+    result.dependent_schemas.update(right.dependent_schemas)
+    result.dependencies.update(right.dependencies)
+    for name, required in right.dependent_required.items():
+        result.dependent_required[name] = list(
+            dict.fromkeys([*result.dependent_required.get(name, []), *required])
+        )
+    if right.unevaluated_properties is not None:
+        result.unevaluated_properties = right.unevaluated_properties
+    if right.unevaluated_items is not None:
+        result.unevaluated_items = right.unevaluated_items
+    if right.property_names is not None:
+        result.property_names = intersect_nodes(
+            result.property_names if result.property_names is not None else True,
+            right.property_names,
+        )
+
+
+def _deactivate_inert_keywords(node: SchemaNode) -> None:
+    """Keep generation hints aligned with keywords active in the selected dialect."""
+    if node.dialect in DRAFT7_DIALECTS:
+        node.dependent_required = {}
+        node.dependent_schemas = {}
+        node.unevaluated_properties = None
+        node.unevaluated_items = None
+        node.min_contains = 1
+        node.max_contains = None
+    else:
+        node.dependencies = {}
+    if (
+        node.dialect in DRAFT7_DIALECTS
+        or node.dialect == "https://json-schema.org/draft/2019-09/schema"
+    ):
+        node.prefix_items = []
+
+
+def accepts_value(node: Node, value: JSONValue) -> bool:
+    """Evaluate a typed schema against a value using its inherited dialect."""
+    if isinstance(node, bool):
+        return node
+    return schema_validator(node.contract, dialect=node.dialect).is_valid(value)
+
+
+def applicable_branches(node: SchemaNode, value: JSONValue) -> Iterator[Node]:
+    """Visit same-instance schema scopes active for a known valid fixture."""
+    yield from node.all_of
+    for branch in [*node.one_of, *node.any_of]:
+        if accepts_value(branch, value):
+            yield branch
+    if node.condition is not None:
+        if accepts_value(node.condition, value):
+            yield node.condition
+            if node.then_schema is not None:
+                yield node.then_schema
+        elif node.else_schema is not None:
+            yield node.else_schema
+    if isinstance(value, dict):
+        yield from _triggered_dependencies(node, value)
+
+
+def _triggered_dependencies(node: SchemaNode, value: dict[str, JSONValue]) -> Iterator[Node]:
+    for name, branch in node.dependent_schemas.items():
+        if name in value:
+            yield branch
+    for name, branch in node.dependencies.items():
+        if name in value and not isinstance(branch, list):
+            yield branch
+
+
+def _permits_string_provider(node: SchemaNode) -> bool:
+    if isinstance(node.types, str):
+        return node.types == "string"
+    if isinstance(node.types, list):
+        return "string" in node.types
+    alternatives = node.any_of or node.one_of
+    if alternatives:
+        return any(
+            branch is True or (isinstance(branch, SchemaNode) and _permits_string_provider(branch))
+            for branch in alternatives
+        )
+    return True
+
+
+def _merge_array_constraints(result: SchemaNode, right: SchemaNode) -> None:
+    if not isinstance(result.items, list) and not isinstance(right.items, list):
+        result.items = intersect_nodes(result.items, right.items)
+    elif isinstance(right.items, list):
+        result.items = right.items
+    if right.prefix_items:
+        result.prefix_items = right.prefix_items
+    result.additional_items = intersect_nodes(result.additional_items, right.additional_items)
+    if result.contains is None and right.contains is not None:
+        result.contains = right.contains
+        result.min_contains = right.min_contains
+        result.max_contains = right.max_contains

@@ -29,7 +29,7 @@ if TYPE_CHECKING:
 class GenerationOptions(BaseModel):
     """Validate invocation options once, before the engine receives them."""
 
-    model_config = ConfigDict(strict=True)
+    model_config = ConfigDict(strict=True, extra="forbid")
     count: int = Field(ge=0)
     seed: int | None
     profile: Profile
@@ -116,7 +116,13 @@ class FixtureFactory:
                 f"{status}, {media_type}."
             )
             raise SchemaError(message) from error
-        normalized = normalize_schema(schema, copied, openapi30=version.startswith("3.0."))
+        dialect = copied.get("jsonSchemaDialect") if version.startswith("3.1.") else None
+        if dialect is not None and not isinstance(dialect, str):
+            message = "OpenAPI jsonSchemaDialect must be a supported dialect URI."
+            raise SchemaError(message)
+        normalized = normalize_schema(
+            schema, copied, openapi30=version.startswith("3.0."), dialect=dialect
+        )
         if fixture_file is not None:
             selector = OperationSelector(
                 path=path, method=method, status=status, body=body, mediaType=media_type
@@ -202,7 +208,7 @@ class FixtureFactory:
     ) -> list[SuccessCase[JSONValue]]:
         """Return successful payloads with statically known outcome and validity."""
         return [
-            SuccessCase(value)
+            SuccessCase(value=value, payload=value)
             for value in self.generate(
                 count=count, seed=seed, profile=profile, max_attempts=max_attempts
             )

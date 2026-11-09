@@ -34,7 +34,7 @@ async def post_registration(body: JSONValue) -> httpx.Response:
 def test_registration_accepts_valid_bodies_and_prices_seats(
     case: SuccessCase[Registration],
 ) -> None:
-    response = asyncio.run(post_registration(case.value.model_dump(mode="json")))
+    response = asyncio.run(post_registration(case.payload))
     assert response.status_code == 201
     reservation = Reservation.model_validate_json(response.content)
     assert reservation.name == case.value.name

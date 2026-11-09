@@ -101,26 +101,7 @@ def _schema_paths(node: Node, path: str) -> set[str]:
     if isinstance(node, bool):
         return set()
     paths = {path}
-    for keyword, children in (
-        ("properties", node.properties),
-        ("patternProperties", node.patterns),
-    ):
-        for name, child in children.items():
-            escaped = name.replace("~", "~0").replace("/", "~1")
-            paths.update(_schema_paths(child, f"{path}/{keyword}/{escaped}"))
-    for keyword, branches in (
-        ("allOf", node.all_of),
-        ("anyOf", node.any_of),
-        ("oneOf", node.one_of),
-    ):
-        for index, child in enumerate(branches):
-            paths.update(_schema_paths(child, f"{path}/{keyword}/{index}"))
-    for keyword, child in (
-        ("items", node.items),
-        ("additionalProperties", node.additional),
-        ("not", node.negated),
-        ("contains", node.contains),
-    ):
-        if child is not None:
-            paths.update(_schema_paths(child, f"{path}/{keyword}"))
+    for tokens, child in node.child_locations():
+        suffix = "".join(f"/{str(token).replace('~', '~0').replace('/', '~1')}" for token in tokens)
+        paths.update(_schema_paths(child, f"{path}{suffix}"))
     return paths
