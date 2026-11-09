@@ -1,0 +1,26 @@
+name: CI
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: python
+    strategy:
+      matrix:
+        python: ['3.12', '3.13', '3.14']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          python-version: '${{ matrix.python }}'
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run ty check
+      - run: uv run pytest tests examples
+      - run: uv run python -m examples.consumer
+      - run: uv build

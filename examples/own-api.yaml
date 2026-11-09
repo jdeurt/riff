@@ -1,0 +1,44 @@
+openapi: 3.1.0
+info:
+  title: Seat registration API
+  version: '1.0'
+paths:
+  /registrations:
+    post:
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [name, seats]
+              properties:
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 64
+                  x-fixture:
+                    provider: full-name
+                    fail:
+                      examples: ['', null]
+                      reason: Empty or non-string names must produce HTTP 422.
+                seats:
+                  type: integer
+                  minimum: 1
+                  maximum: 50
+                  x-fixture:
+                    fail:
+                      examples: [0, 51, many]
+                      reason: Invalid seat counts must produce HTTP 422.
+      responses:
+        '201':
+          description: Reserved seats at 1200 cents per seat
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [name, total_cents]
+                properties:
+                  name: {type: string}
+                  total_cents: {type: integer, minimum: 1200, maximum: 60000}

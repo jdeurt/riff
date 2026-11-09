@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.27,<2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "riff"
+version = "0.1.0"
+description = "Schema-guided fuzz fixtures for vendor API consumers"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "faker>=30,<41",
+  "jsonschema>=4.23,<5",
+  "pyyaml>=6,<7",
+  "rstr>=3.2,<4",
+  "pydantic>=2.10,<3",
+]
+
+[project.scripts]
+riff = "riff.cli:main"
+
+[dependency-groups]
+dev = [
+  "build>=1.2,<2",
+  "httpx>=0.28,<1",
+  "fastapi>=0.115,<1",
+  "pytest>=8.3,<10",
+  "ruff>=0.11,<1",
+  "ty>=0.0.24,<1",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+  "COM812", # Formatter controls trailing commas.
+  "D203", # Use D211: no blank line before class docstrings.
+  "D213", # Use D212: docstrings start on their first line.
+  "CPY001", # Copyright ownership has not been declared by the repository owner.
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*.py" = ["S101", "D", "PLR2004"]
+"examples/*.py" = ["S101", "D", "INP001", "PLR2004"]
+
+[tool.ruff.lint.pylint]
+max-args = 8
+
+[tool.ruff.lint.flake8-type-checking]
+runtime-evaluated-base-classes = ["pydantic.BaseModel", "riff.compiler.StrategyModel"]
+
+[tool.ty.rules]
+all = "error"
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"typing.cast".msg = "Validate external input and use concrete internal types."
+"typing.Any".msg = "Use concrete types."
+"typing_extensions.cast".msg = "Validate external input and use concrete internal types."
+"typing_extensions.Any".msg = "Use concrete types."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-config --strict-markers"
