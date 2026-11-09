@@ -92,6 +92,11 @@ generation constraints. Unknown formats remain annotations; implementations MUST
 document recognized format assertions. Validation coverage does not imply a
 complete generator for every satisfiable combination.
 
+Numeric constraints MUST be evaluated without silently rounding their JSON
+values. A binding MUST reject file inputs or generated values it cannot represent
+faithfully in its public JSON types. Implementations MUST bound numeric precision
+and exponents before expansion or arithmetic and document those limits.
+
 ## 4. Portable fixture metadata
 
 `x-fixture` MAY annotate schemas describing generated values:
@@ -112,6 +117,8 @@ or one `strategy`. A strategy MUST NOT coexist with those shorthand keys.
 `examples` is a nonempty array of JSON values. Positive shorthand examples MUST
 satisfy the annotated schema at compilation. Strategy values are candidates and
 are validated at draw time. Unknown metadata keys MUST fail compilation.
+Metadata and registered provider names MUST be checked in every reachable schema
+location, including alternatives that a particular draw does not select.
 
 `fail` contains a source with the same fields and an optional string `reason`.
 It MUST declare a provider, examples, or a strategy. Failure examples MAY violate
@@ -139,6 +146,8 @@ or annotation data are unsupported. Missing paths or boolean-schema targets MUST
 fail. Each entry contains the complete metadata otherwise placed at `x-fixture`.
 Operation fields override global fields at the same pointer, and selected entries
 replace complete inline annotations. They MUST NOT merge conflicting source keys.
+All sidecar entries MUST have valid structure, including unselected entries.
+`body` MUST be either `request` or `response`.
 
 ## 5. Strategies
 
@@ -255,6 +264,9 @@ using that field's explicit `fail` declaration. The root is a possible field.
 Optional fields may be added when their parent exists. Array-item declarations
 are reachable only in nonempty arrays. A replacement MUST change the JSON value.
 No reachable declaration or only unchanged replacements is a generation failure.
+Failure declarations in a successful `if` predicate are reachable along with the
+active branch. Resource limits MUST apply to the complete mutated payload,
+including explicit replacements, rather than only its individual parts.
 
 Failure sources MAY preserve schema validity: an inactive account can be a
 well-formed record that must be rejected by an operation. Implementations MUST
@@ -273,6 +285,8 @@ Runtime schema constraints MUST still be checked.
 
 Every draw and rejection loop MUST have a finite budget. Implementations MUST
 also bound nested generation and structural sizes, and document those bounds.
+The same output limits MUST apply to generated pass and fail fixtures, including
+provider output and explicit values. Oversized candidates MUST be rejected.
 Budget exhaustion MUST fail the operation without returning a partial batch.
 Budgets bound candidate work, not the running time of arbitrary provider code,
 oracles, or regular expressions.
@@ -299,3 +313,9 @@ number of oracle evaluations, and whether that budget was exhausted. A greedy
 result is not guaranteed globally minimal. Oracle exceptions MUST propagate;
 callers own test execution and cleanup. The oracle must be repeatable for useful
 results. Minimization MUST NOT mutate the caller's original value.
+Candidate enumeration MUST also have a finite work budget, including candidates
+rejected before an oracle call. Implementations MUST generate reductions lazily
+or otherwise bound intermediate storage. Budget exhaustion MAY reflect either
+the oracle limit or candidate-work limit; the evaluation count MUST report only
+actual oracle calls. Oracle exceptions MUST retain their original identity in
+bindings that support exception objects.

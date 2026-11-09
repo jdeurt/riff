@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling>=1.27,<2"]
-build-backend = "hatchling.build"
+requires = ["maturin>=1.9,<2"]
+build-backend = "maturin"
 
 [project]
 name = "riff"
@@ -10,9 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "faker>=30,<41",
-  "jsonschema[format]>=4.23,<5",
   "pyyaml>=6,<7",
-  "rstr>=3.2,<4",
   "pydantic>=2.10,<3",
   "typing-extensions>=4.12,<5",
 ]
@@ -32,7 +30,14 @@ dev = [
   "pytest>=8.3,<10",
   "ruff>=0.11,<1",
   "ty>=0.0.24,<1",
+  "jsonschema[format]>=4.23,<5",
 ]
+
+[tool.maturin]
+manifest-path = "../bindings/python/Cargo.toml"
+python-source = "src"
+module-name = "riff._native"
+features = ["pyo3/extension-module"]
 
 [tool.ruff]
 target-version = "py310"
@@ -50,12 +55,14 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/*.py" = ["S101", "D", "PLR2004"]
 "examples/*.py" = ["S101", "D", "INP001", "PLR2004"]
+"src/riff/_native.pyi" = ["PYI021"] # Binding definitions include requested IDE documentation.
 
 [tool.ruff.lint.pylint]
 max-args = 9
 
 [tool.ruff.lint.flake8-type-checking]
 runtime-evaluated-base-classes = ["pydantic.BaseModel", "riff.compiler.StrategyModel"]
+runtime-evaluated-decorators = ["dataclasses.dataclass"]
 
 [tool.ty.rules]
 all = "error"

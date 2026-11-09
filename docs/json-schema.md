@@ -66,13 +66,17 @@ Recognized standard formats are asserted using the selected dialect's format
 checker. Built-in generators cover email/IDN email, hostnames, IPv4/IPv6, UUID,
 URI/IRI references, URI templates, date/time/duration, JSON Pointers, and regex
 strings. An unknown format remains an annotation, as JSON Schema specifies;
-other constraints still apply. Regex generation uses Python-compatible syntax
-through rstr, with no cross-engine equivalence guarantee.
+other constraints still apply. Both bindings use Rust's `jsonschema` validator
+and its `fancy-regex` backend. Pattern sampling uses `rand_regex`; patterns it
+cannot sample require explicit examples or a provider. Sampling limits patterns
+to 1024 UTF-8 bytes, repetitions to 32, and compiled sampling capacity to 4096.
+There is no cross-engine regex equivalence guarantee.
 
 Local acyclic JSON Pointer references are expanded against the supplied document.
 Remote references, recursive/dynamic references, anchor references, reference
 siblings, custom vocabularies, and URI resource/base-ID scoping are outside the
-reference implementation. Unsupported schema validation keywords are rejected.
+shared engine. Nested dialect switching is also unsupported. Unsupported schema
+validation keywords are rejected.
 Use an explicit provider or explicit values when generation needs domain rules
 beyond the contract.
 
@@ -80,6 +84,35 @@ beyond the contract.
 
 `constraints: respect` is the default for a schema strategy. In an explicit
 failure declaration, `constraints: violate` derives negative boundaries such as
-0/51 for an integer bounded from 1 to 50, or extra keys for a closed object.
+0/51 for an integer bounded from 1 to 50. Unsupported local boundary mutations
+fall back to type violations; use explicit failure values to exercise extra keys
+on a closed object.
 Custom failure providers and explicit failure examples can produce other cases.
 The enclosing case separately reports whether the full body satisfies its schema.
+
+## Numbers and limits
+
+The Rust engine preserves JSON decimal constraints exactly, including integers
+larger than 64 bits. Numeric coefficients are limited to 1024 digits and absolute
+normalized decimal scales to 1024; oversized numbers and extreme exponents fail before
+expensive expansion. Numeric JSON text also has a 2100-character lexical limit.
+These checks apply to contracts, explicit values, provider
+results, validation inputs, and minimization candidates.
+
+Python exposes integers and finite floats. JavaScript exposes finite numbers;
+use `bigint` for seeds, which are separate from JSON payloads. File readers reject
+numeric literals that those public types would round. Native output decoding
+likewise rejects an unrepresentable value with `GenerationError`, rather than
+silently altering the fixture. A number already rounded before being passed to
+Riff cannot be recovered; use strings for domain values needing decimal fidelity.
+
+Pass and fail payloads have maximum depth 32 and string/collection sizes 1024,
+including explicit values and provider results. Contract input nesting is limited
+to 128 and resolved schema structure to 16384 nodes. Generation has a shared
+candidate-work budget of `100 * maxAttempts` per draw, plus per-node rejection
+limits. Count is limited to 10000 and attempts to 100000. These limits bound
+search work; provider code, oracle code, and regex execution have no timeout.
+
+Minimization enumerates reductions lazily. Its candidate-work budget is
+`100 * maxEvaluations`, separate from the oracle-call limit; either can set the
+result's exhaustion flag. It does not allocate all possible reductions upfront.

@@ -12,9 +12,11 @@ x-fixture:
   locale: en-US
 ```
 
-Locale names use language-region spelling. Default providers support locales
-available in the installed Faker version. Custom providers decide which locales
-and options they support.
+Locale names use language-region spelling. Python defaults support locales
+available in the installed Faker version. JavaScript defaults support `en-US`,
+`en-GB`, `de-DE`, `fr-FR`, and `ja-JP`. Built-in locale availability is checked at
+compilation. Custom providers decide which locales and options they support.
+Faker algorithms and generated text can differ between bindings.
 
 ## Register a custom semantic type
 
@@ -71,3 +73,7 @@ Unregistered names raise `SchemaError` before sampling. Exceptions and non-JSON
 returns raise `ProviderError`. Schema-incompatible successful output consumes the
 generation budget and eventually raises `GenerationError`. Provider execution
 itself has no timeout; providers should do bounded local work.
+
+JavaScript uses the same contract with `ProviderContext.seed` represented as
+`bigint`; Python uses `int`, and Rust uses `u64`. See the
+[JavaScript provider example](javascript-api.md#custom-providers).

@@ -10,23 +10,21 @@ from pydantic import BaseModel, ValidationError
 from riff.compiler import JSON_ADAPTER
 from riff.contracts import FailureCase, SuccessCase
 from riff.errors import GenerationError
-from riff.validation import schema_validator
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 if TYPE_CHECKING:
     from riff.factory import FixtureFactory
-    from riff.types import JSONValue, Profile, Schema
+    from riff.types import JSONValue, Profile
 
 
 class ModelFactory(Generic[ModelT]):
     """Bind a fixture contract to a model, preserving its inferred result type."""
 
-    def __init__(self, factory: FixtureFactory, model: type[ModelT], schema: Schema) -> None:
+    def __init__(self, factory: FixtureFactory, model: type[ModelT]) -> None:
         """Retain the compiled factory and its caller-selected result model."""
         self._factory = factory
         self._model = model
-        self._validator = schema_validator(schema)
 
     def generate(
         self,
@@ -78,7 +76,7 @@ class ModelFactory(Generic[ModelT]):
         serialized = JSON_ADAPTER.validate_python(
             model.model_dump(mode="json", by_alias=True, exclude_unset=True, round_trip=True)
         )
-        if not self._validator.is_valid(serialized):
+        if not self._factory.is_valid(serialized):
             message = f"Serialized bound model {self._model.__name__} violates the original schema."
             raise GenerationError(message)
         return model

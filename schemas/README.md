@@ -1,6 +1,6 @@
 # Schemas used for dogfooding
 
-`run-options.schema.json` describes the Python reference implementation's
+`run-options.schema.json` describes the Python binding's
 validated generation invocation options. It is exported from `GenerationOptions`.
 `examples/riff-options.fixtures.yaml` adds small test workloads and failure cases
 without changing that contract.

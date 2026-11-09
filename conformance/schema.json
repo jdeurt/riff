@@ -1,0 +1,25 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "seats", "tags"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^acct_[0-9a-f]{16}$",
+      "x-fixture": {"strategy": {"kind": "provider", "name": "synthetic.id"}}
+    },
+    "seats": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 50,
+      "x-fixture": {"fail": {"strategy": {"kind": "schema", "constraints": "violate"}}}
+    },
+    "tags": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {"enum": ["new", "returning", "group"]}
+    }
+  }
+}

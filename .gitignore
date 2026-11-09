@@ -5,3 +5,9 @@ __pycache__/
 .ruff_cache/
 dist/
 *.egg-info/
+node_modules/
+coverage/
+target/
+*.so
+*.dylib
+*.node

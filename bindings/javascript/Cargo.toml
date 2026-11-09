@@ -1,0 +1,18 @@
+[package]
+name = "riff-neon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+riff-core.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+neon = { version = "1.1", default-features = false, features = ["napi-6"] }
+
+[lints]
+workspace = true

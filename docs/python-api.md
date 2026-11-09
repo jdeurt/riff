@@ -2,6 +2,8 @@
 
 Python code lives in `python/`; shared schemas and guides live at the repository
 root. Run development commands from `python/` with uv.
+The typed Python facade calls the [shared Rust engine](architecture.md) through
+PyO3; source installation requires Rust and a platform linker.
 
 ## Construct a factory
 
@@ -34,7 +36,10 @@ OpenAPI selection options are keyword-only:
 
 Every generation method accepts `count=1`, `seed=None`, `profile="mixed"`, and
 `max_attempts=100` as keyword-only arguments. Count is nonnegative; attempt limits
-are positive integers. Profiles are `mixed`, `realistic`, and `boundary`.
+are positive integers. Count is at most 10000 and attempts at most 100000.
+Integer seeds are normalized modulo 2⁶⁴. Profiles are `mixed`, `realistic`, and
+`boundary`. `factory.is_valid(value)` checks a JSON value against the compiled
+contract without generating data.
 
 | Method | Raw `FixtureFactory` | Typed `ModelFactory[T]` |
 | --- | --- | --- |
@@ -54,7 +59,9 @@ Malformed failure values do not go through successful model decoding.
 ## Cases and JSON types
 
 `JSONValue` is the recursive union of JSON scalars, arrays, and string-keyed
-objects. Numbers must be finite.
+objects. Numbers must be finite. Integers retain arbitrary precision within the
+core's limits. File inputs and native results that would lose decimal precision
+when represented as Python floats are rejected; see [numeric limits](json-schema.md#numbers-and-limits).
 
 `SuccessCase[T]` contains a typed `value`, the original JSON `payload`, and literal
 `expectation="pass"` / `schema_valid=True` fields. Send `payload` through HTTP tools:
@@ -129,6 +136,8 @@ failure-case construction retries at most `max_attempts` base/replacement attemp
 Its aggregate work can therefore exceed a single draw budget.
 Explicit values/provider output are validated but not resized. Budgets do not
 time-limit provider code, regex engines, or failure oracles.
+Complete pass and fail payloads must fit the same limits. Numeric allocation and
+minimization-work limits are described in the [schema guide](json-schema.md#numbers-and-limits).
 
 ## CLI
 

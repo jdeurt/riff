@@ -31,6 +31,14 @@ validated request models from `.generate()` and typed cases from
 extra fields. The supplied example covers both OpenAPI-first and model-first
 generation.
 
+The JavaScript [registration handler](../javascript/examples/registration.ts)
+uses Zod's inferred request type and a standard Fetch `Request`/`Response` API.
+Its [tests](../javascript/tests/endpoints.test.ts) send generated success and
+failure payloads through the handler and check the independent 1200-cent price
+rule. The vendor example in the same suite runs a real local HTTP server before
+passing its response through the consumer's parser. From `javascript/`, run
+`npm test` to build and execute both workflows.
+
 ## An endpoint that calls a vendor
 
 The [vendor-consumer example](../python/examples/test_endpoint.py) uses three
@@ -63,3 +71,9 @@ more inputs. Save failing payloads and their case envelopes. Pinning the runtime
 and `uv.lock` supports seeded replay; retained JSON supports replay after upgrades.
 Riff does not promise exhaustive sampling, automatic scheduling, or reproduction
 from a seed across different implementation/dependency versions.
+
+The [shared-engine replay check](../python/examples/check_bindings.py) compares
+Python and JavaScript batches, full negative-case diagnostics, and custom-provider
+seeds using the same contract. After building both bindings, run it from `python/`
+with `uv run python -m examples.check_bindings`. This checks the pinned engine and
+provider contract; Faker text remains specific to each language's provider.

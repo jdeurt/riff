@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date, datetime, timedelta, timezone
-from typing import TYPE_CHECKING
+from random import Random
+from typing import TYPE_CHECKING, Literal
 
 from faker import Faker
+from pydantic import BaseModel, ConfigDict, Field
 
-from riff.errors import SchemaError
+from riff.compiler import JSON_ADAPTER
+from riff.contracts import ProviderContext
+from riff.errors import ProviderError, SchemaError
+from riff.types import JSONValue
 
 if TYPE_CHECKING:
-    from random import Random
+    from collections.abc import Callable, Mapping
+
+    from riff.contracts import Provider
 
 
 STRING_FORMATS = frozenset(
@@ -37,13 +45,6 @@ STRING_FORMATS = frozenset(
         "color",
     }
 )
-
-
-def make_faker(locale: str, random: Random) -> Faker:
-    """Create a provider whose random state belongs only to this batch."""
-    faker = Faker(locale.replace("-", "_"))
-    faker.seed_instance(random.getrandbits(64))
-    return faker
 
 
 def semantic_value(provider: str, faker: Faker) -> str:
@@ -102,3 +103,53 @@ def formatted_value(format_name: str, faker: Faker, random: Random) -> str:
         case _:
             message = f"Unsupported string format: {format_name}"
             raise SchemaError(message)
+
+
+class NativeProviderRequest(BaseModel):
+    """Validated native ABI request; decimal seed strings retain all 64 bits."""
+
+    model_config = ConfigDict(strict=True, extra="forbid")
+    kind: Literal["provider", "format"]
+    name: str
+    seed: str
+    locale: str
+    field_schema: dict[str, JSONValue] = Field(alias="schema")
+    options: dict[str, JSONValue]
+
+
+def provider_bridge(providers: Mapping[str, Provider]) -> Callable[[str], str]:
+    """Create a per-batch callback adapting native requests to Python providers."""
+    fakers: dict[str, Faker] = {}
+
+    def invoke(payload: str) -> str:
+        request = NativeProviderRequest.model_validate_json(payload)
+        seed = int(request.seed)
+        try:
+            custom = providers.get(request.name)
+            if request.kind == "provider" and custom is not None:
+                value = custom(
+                    ProviderContext(
+                        seed=seed,
+                        locale=request.locale,
+                        schema=request.field_schema,
+                        options=request.options,
+                    )
+                )
+            else:
+                faker = fakers.get(request.locale)
+                if faker is None:
+                    faker = Faker(request.locale.replace("-", "_"))
+                    fakers[request.locale] = faker
+                faker.seed_instance(seed)
+                format_random = Random(seed)  # noqa: S311 -- Reproducible test fixtures.
+                value = (
+                    formatted_value(request.name, faker, format_random)
+                    if request.kind == "format"
+                    else semantic_value(request.name, faker)
+                )
+            return json.dumps(JSON_ADAPTER.validate_python(value), allow_nan=False)
+        except Exception as error:
+            message = f"Provider {request.name!r} failed: {error}"
+            raise ProviderError(message) from error
+
+    return invoke

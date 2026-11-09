@@ -5,6 +5,9 @@ then give the resulting payloads to your existing test client or HTTP mock.
 
 ## Install
 
+Install [Rust](https://rustup.rs/), Python 3.10+, and uv for a source build.
+For Node 22.12+, use the [JavaScript quick start](javascript-api.md).
+
 ```sh
 git clone https://github.com/jdeurt/riff.git
 cd riff/python

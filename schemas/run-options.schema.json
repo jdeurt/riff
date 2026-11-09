@@ -1,18 +1,9 @@
 {
-  "$defs": {
-    "Profile": {
-      "enum": [
-        "mixed",
-        "realistic",
-        "boundary"
-      ],
-      "type": "string"
-    }
-  },
   "additionalProperties": false,
-  "description": "Validate invocation options once, before the engine receives them.",
+  "description": "Validate invocation options before calling native code.",
   "properties": {
     "count": {
+      "maximum": 10000,
       "minimum": 0,
       "title": "Count",
       "type": "integer"
@@ -29,9 +20,16 @@
       "title": "Seed"
     },
     "profile": {
-      "$ref": "#/$defs/Profile"
+      "enum": [
+        "mixed",
+        "realistic",
+        "boundary"
+      ],
+      "title": "Profile",
+      "type": "string"
     },
     "max_attempts": {
+      "maximum": 100000,
       "minimum": 1,
       "title": "Max Attempts",
       "type": "integer"

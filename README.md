@@ -6,9 +6,11 @@ endpoints or response bodies for code that consumes another API.
 Riff produces data. Your existing test runner, HTTP client, interceptor, mock
 transport, or VCR setup supplies that data to the system under test.
 
-The [specification](docs/spec.md) is language-agnostic. The first implementation
-lives in [`python/`](python/), with Faker-backed defaults, custom providers,
-composable strategies, labeled success/failure cases, and seeded replay.
+The [specification](docs/spec.md) is language-agnostic. A shared [`rust/`](rust/)
+engine powers typed [`python/`](python/) bindings through PyO3 and
+[`javascript/`](javascript/) bindings through Neon. Both provide Faker-backed
+defaults, custom providers, composable strategies, labeled success/failure cases,
+and seeded replay.
 Fixture annotations may live inline or in sidecar YAML files selected by endpoint
 and schema path. Default generation respects constraints; explicit failure
 strategies can violate them.
@@ -28,12 +30,17 @@ The endpoint guide shows how those fixtures enter real tests.
 - [Publishing a clean OpenAPI spec](docs/publishing-openapi.md)
 - [Dogfooding Riff](docs/dogfooding.md)
 - [Python API reference](docs/python-api.md)
+- [JavaScript guide and API](docs/javascript-api.md)
+- [Native architecture and builds](docs/architecture.md)
+- [Strict tooling](docs/tooling.md)
 - [Portable specification](docs/spec.md)
 
 ## Python development
 
-Python 3.10+ and [uv](https://docs.astral.sh/uv/) are required. CI checks Python
-3.10, 3.11, 3.12, 3.13, and 3.14.
+Install [Rust](https://rustup.rs/), Python 3.10+, and
+[uv](https://docs.astral.sh/uv/). CI checks Python 3.10–3.14 and Node 22/24, with
+strict Rust, Python, and Oxc checks. See [native builds](docs/architecture.md) for
+source installation and platform-specific package artifacts.
 
 ```sh
 cd python
