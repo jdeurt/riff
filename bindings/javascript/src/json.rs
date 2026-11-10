@@ -3,7 +3,8 @@ use neon::prelude::*;
 use serde_json::{Map, Number, Value};
 use std::str::FromStr;
 
-use super::{json_value, throw_core};
+use super::{json_value, object_method};
+use crate::errors::raise as throw_core;
 
 pub fn copy(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     let input = cx.argument::<JsValue>(0)?;
@@ -15,7 +16,7 @@ pub fn copy(mut cx: FunctionContext<'_>) -> JsResult<'_, JsValue> {
     json_value(&mut cx, &source)
 }
 
-fn read<'a>(
+pub fn read<'a>(
     cx: &mut FunctionContext<'a>,
     input: Handle<'a, JsValue>,
     ancestors: &mut Vec<Handle<'a, JsObject>>,
@@ -57,7 +58,7 @@ fn read<'a>(
     Ok(value)
 }
 
-fn text<'a>(cx: &mut FunctionContext<'a>, input: Handle<'a, JsString>) -> NeonResult<String> {
+pub fn text<'a>(cx: &mut FunctionContext<'a>, input: Handle<'a, JsString>) -> NeonResult<String> {
     let decoded = input.value(cx);
     let reconstructed = cx.string(&decoded);
     if !reconstructed.strict_equals(cx, input) {
@@ -69,16 +70,6 @@ fn text<'a>(cx: &mut FunctionContext<'a>, input: Handle<'a, JsString>) -> NeonRe
         );
     }
     Ok(decoded)
-}
-
-fn object_method<'a>(
-    cx: &mut FunctionContext<'a>,
-    name: &str,
-    arguments: &[Handle<'a, JsValue>],
-) -> JsResult<'a, JsValue> {
-    let object = cx.global::<JsFunction>("Object")?;
-    let method = object.get::<JsFunction, _, _>(cx, name)?;
-    method.call(cx, object, arguments)
 }
 
 fn validate_prototype<'a>(

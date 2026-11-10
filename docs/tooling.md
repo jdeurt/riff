@@ -45,12 +45,14 @@ the contract. These exceptions are explicit in `.oxlintrc.json`:
 | Core undefined-reference rule | TypeScript supplies the authoritative reference/type check. |
 | Import declaration ordering | Oxfmt owns ordering; named imports are still checked. |
 | Common numeric literals | Only -1, 0, 1, and array indexes are exempt from magic-number checks. |
-| Runtime declarations | Module loading and ambient declarations have narrow import-style exceptions. |
-| Related error classes | The public error hierarchy shares one module. |
+| Runtime declarations | Module loading and ambient declarations have narrow import-style exceptions; class declarations describe behavior without runtime field initialization. |
+| Related class declarations | Public factory and error contracts share one declaration module. |
 | HTTP examples/tests | Async HTTP and test registration are allowed; tests run request sequences deliberately and use literal independent expected outcomes. |
 
-The one inline structured-clone exception checks model JSON serialization,
-including `toJSON` behavior. It is checked for continued necessity.
+Inline exceptions retain declaration references for installed consumers and check
+model JSON serialization, including `toJSON` behavior. The package consumer check
+uses npm's supplied CLI path to launch installations across platforms. Unused
+exceptions fail linting.
 
 ## Python
 

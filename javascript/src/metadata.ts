@@ -1,5 +1,4 @@
-import { jsonValue } from "./json.js";
-import { callNative, native } from "./native.js";
+import { native } from "./native.js";
 import type { JSONObject, JSONValue, Schema } from "./types.js";
 
 type Values = readonly [JSONValue, ...JSONValue[]];
@@ -41,10 +40,4 @@ export type Failure = (
 export type FixtureMetadata = Source & { readonly fail?: Failure };
 
 /** Build and validate portable metadata for a schema or Standard Schema model. */
-export function fixture(metadata: FixtureMetadata): JSONObject {
-  const value = jsonValue(metadata);
-  callNative(() => {
-    native.validateMetadata(JSON.stringify(value));
-  });
-  return { "x-fixture": value };
-}
+export const fixture: (metadata: FixtureMetadata) => JSONObject = native.fixture;

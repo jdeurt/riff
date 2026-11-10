@@ -31,6 +31,7 @@ From `javascript/`:
 npm ci
 npm run check
 npm pack
+npm run check:package
 ```
 
 Install the resulting tarball into your project:
@@ -41,6 +42,8 @@ npm install /path/to/riff/javascript/riff-fixtures-0.1.0.tgz
 
 Build packages on their target operating system and architecture. These commands
 create local artifacts; neither package has been published to a registry.
+The consumer check installs the tarball into a temporary project, checks inferred
+model and case types, and runs successful and declared-failure generation.
 The [JavaScript guide](javascript-api.md) covers typed models and examples.
 
 ## Checks

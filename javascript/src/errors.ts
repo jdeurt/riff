@@ -1,16 +1,10 @@
-/** Base class for Riff contract, generation, and provider failures. */
-export class RiffError extends Error {
-  public override name = "RiffError";
-}
-/** Invalid or unsupported schema, metadata, or operation selection. */
-export class SchemaError extends RiffError {
-  public override name = "SchemaError";
-}
-/** Bounded generation or mutation could not produce a complete batch. */
-export class GenerationError extends RiffError {
-  public override name = "GenerationError";
-}
-/** Host provider raised or returned a value outside the JSON contract. */
-export class ProviderError extends RiffError {
-  public override name = "ProviderError";
-}
+import { native } from "./native.js";
+
+/** Base class for contract, generation, and provider failures. */
+export import RiffError = native.RiffError;
+/** Invalid or unsupported contract. */
+export import SchemaError = native.SchemaError;
+/** Bounded generation failed. */
+export import GenerationError = native.GenerationError;
+/** Provider failure retaining the caller's original cause. */
+export import ProviderError = native.ProviderError;

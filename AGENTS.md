@@ -10,6 +10,11 @@ callbacks, and errors; Python and JavaScript expose typed interfaces and model
 integration. Do not duplicate generation, parsing, validation, or CLI policy in
 language packages. In particular, follow `M-FFI-TRANSLATES`.
 
+Language package runtime code is limited to exports, native loading, typed model
+adapters, and CLI stream handling. Expose factory operations and metadata helpers
+directly from the bindings. Keep request assembly, JSON conversion, provider
+dispatch, result presentation, and native error translation in the bindings.
+
 Use the pinned Rust toolchain. Do not weaken workspace lints or add unchecked
 casts, unsafe source, panic-based input handling, or undocumented public APIs.
 Check changes from the repository root:

@@ -11,3 +11,4 @@ target/
 *.so
 *.dylib
 *.node
+*.tgz

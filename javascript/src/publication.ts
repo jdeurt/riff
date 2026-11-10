@@ -1,8 +1,6 @@
-import { jsonValue } from "./json.js";
-import { callNative, native } from "./native.js";
+import { native } from "./native.js";
 import type { JSONObject } from "./types.js";
 
-/** Return a clean OpenAPI copy, retaining refs, constraints, and literal payload data. */
-export function stripFixtureMetadata(document: JSONObject): JSONObject {
-  return callNative(() => native.stripMetadata(JSON.stringify(jsonValue(document))));
-}
+/** Return a clean OpenAPI copy, retaining constraints and literal payload data. */
+export const stripFixtureMetadata: (document: JSONObject) => JSONObject =
+  native.stripFixtureMetadata;

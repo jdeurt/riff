@@ -244,9 +244,12 @@ Custom registrations MAY override built-in names. Built-in semantic names are
 and `uuid`. Their exact text is not standardized. Defaults are string providers;
 custom providers may produce any JSON type satisfying the enclosing schema.
 
-All returned data MUST be JSON-compatible with finite numbers. Exceptions and
-non-JSON output are provider failures. Schema-incompatible pass output is a
-rejected draw. Failure providers may deliberately return incompatible data.
+All returned data MUST be JSON-compatible with finite numbers. Ordinary provider
+exceptions and non-JSON output are provider failures. Bindings SHOULD retain the
+original exception as the cause. Host cancellation and process-exit behavior MUST
+be preserved when the host distinguishes it from ordinary exceptions.
+Schema-incompatible pass output is a rejected draw. Failure providers may
+deliberately return incompatible data.
 
 ## 7. Profiles and exploration
 
@@ -305,6 +308,10 @@ provider output and explicit values. Oversized candidates MUST be rejected.
 Budget exhaustion MUST fail the operation without returning a partial batch.
 Budgets bound candidate work, not the running time of arbitrary provider code,
 oracles, or regular expressions.
+
+Malformed generation and minimization controls, including unknown control fields,
+MUST be rejected. Host numeric values MUST be bounded before converting them to
+decimal text or expanding them for seed normalization.
 
 A supplied seed MUST reproduce a batch for identical schema, options, provider
 behavior, implementation, runtime, and dependency versions. Separate batches MUST

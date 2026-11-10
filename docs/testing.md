@@ -72,6 +72,5 @@ and `uv.lock` supports seeded replay; retained JSON supports replay after upgrad
 Riff does not promise exhaustive sampling, automatic scheduling, or reproduction
 from a seed across different implementation/dependency versions.
 
-
 Riff also [fuzzes its JSON Schema, OpenAPI, and sidecar inputs](input-fuzzing.md).
 Those tests run in the Rust package.

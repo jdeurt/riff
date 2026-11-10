@@ -91,6 +91,8 @@
     {
       "files": ["src/native-addon.d.ts"],
       "rules": {
+        "eslint/max-classes-per-file": "off",
+        "unicorn/custom-error-definition": "off",
         "eslint/max-params": "off",
         "import/unambiguous": "off",
         "typescript/consistent-type-imports": [
@@ -99,12 +101,6 @@
             "disallowTypeAnnotations": false
           }
         ]
-      }
-    },
-    {
-      "files": ["src/errors.ts"],
-      "rules": {
-        "eslint/max-classes-per-file": "off"
       }
     },
     {

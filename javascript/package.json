@@ -30,7 +30,8 @@
     "test": "npm run build && node --test dist/tests/*.test.js",
     "check": "npm run lint && npm run format:check && npm test",
     "prepack": "npm run build",
-    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\""
+    "clean": "node --input-type=module -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\"",
+    "check:package": "node dist/scripts/check-package.js"
   },
   "dependencies": {
     "@standard-schema/spec": "^1.1.0"

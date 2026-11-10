@@ -72,8 +72,10 @@ Register both names. Failure sources can also use explicit examples or complete
 strategy trees. A failure may be schema-invalid or schema-valid; the resulting
 case reports which one occurred.
 
-Unregistered names raise `SchemaError` before sampling. Exceptions and non-JSON
-returns raise `ProviderError`. Schema-incompatible successful output consumes the
+Unregistered names raise `SchemaError` before sampling. Ordinary exceptions and
+non-JSON returns raise `ProviderError`, retaining the original exception as the
+cause. Python cancellation and process-exit exceptions propagate unchanged.
+Schema-incompatible successful output consumes the
 generation budget and eventually raises `GenerationError`. Provider execution
 itself has no timeout; providers should do bounded local work.
 

@@ -10,6 +10,7 @@ For a source build, install Rust and run from this directory:
 npm ci
 npm run check
 npm pack
+npm run check:package
 ```
 
 Install the resulting tarball into your Node project. Build packages on the

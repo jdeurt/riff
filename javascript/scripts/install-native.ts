@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const names: Readonly<Record<string, string>> = {
@@ -12,3 +12,11 @@ if (name === undefined) {
 }
 mkdirSync("native", { recursive: true });
 copyFileSync(path.resolve("../target/release", name), path.resolve("native/index.node"));
+
+copyFileSync("src/native-addon.d.ts", "dist/src/native-addon.d.ts");
+// Declaration references must resolve within the installed package.
+const declarations = readFileSync("dist/src/binding.d.cts", "utf8");
+writeFileSync(
+  "dist/src/binding.d.cts",
+  declarations.replace("../../src/native-addon.d.ts", "./native-addon.d.ts"),
+);

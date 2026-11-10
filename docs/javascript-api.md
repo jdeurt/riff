@@ -12,9 +12,9 @@ Install [Rust](https://rustup.rs/), Node 22.12+, and npm. From `javascript/`:
 
 ```sh
 npm ci
-npm run build
-npm test
+npm run check
 npm pack
+npm run check:package
 ```
 
 Install the resulting `riff-fixtures-0.1.0.tgz` into a Node project:
@@ -100,7 +100,7 @@ The [sidecar syntax](sidecars.md) uses RFC 6901 schema pointers after reference
 expansion. Request selection ignores `status`. Missing exact responses and
 ambiguous operation overlays fail compilation.
 
-`generate`, `successCases`, and `failureCases` accept an options object:
+`generate`, `successCases`, and `failureCases` accept a plain options object:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
@@ -157,6 +157,8 @@ The synchronous oracle must report failure for the initial value. Its exceptions
 propagate unchanged. Results contain `value`, `evaluations`, and
 `budgetExhausted`. Disable schema preservation for malformed inputs. Candidate
 work is bounded independently of oracle calls.
+Minimization options must also be a plain object. Arrays, class instances, and
+unknown control fields are rejected.
 
 `stripFixtureMetadata(openapi)` returns a clean publication copy. It preserves
 constraints, references, examples, defaults, and payload properties literally
@@ -165,8 +167,10 @@ named `x-fixture`.
 ## Errors, limits, and CLI
 
 `SchemaError`, `GenerationError`, and `ProviderError` inherit `RiffError`.
-Invalid generation controls raise `RangeError`. Model validation may also report
-the model library's validation errors.
+Provider failures retain the original exception as `cause`. Invalid control
+values raise `RangeError`; incompatible argument types can raise `TypeError`.
+Failed model validation or schema-incompatible model serialization raises
+`GenerationError`. Model code that throws an exception propagates it unchanged.
 The shared [schema guide](json-schema.md) documents constraints and resource
 limits. Numeric JSON that cannot round-trip through JavaScript is rejected;
 generation never silently rounds a valid fixture.
