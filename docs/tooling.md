@@ -15,7 +15,7 @@ Additional restriction lints deny unchecked casts, direct indexing/slicing,
 `unwrap`, `expect`, `panic`, unfinished code, debug macros, and stdout/stderr
 printing. Rust forbids unsafe source and denies missing public documentation
 and ignored results. CI invokes Clippy with `-D warnings` across all targets and
-features. The Rust source has no lint suppressions.
+features. Checked lint exceptions cover public constructors with many keyword arguments.
 
 ## JavaScript
 

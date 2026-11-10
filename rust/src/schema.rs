@@ -365,7 +365,7 @@ fn schema_paths(schema: &Value, prefix: &str, output: &mut BTreeSet<String>) {
 }
 
 fn attach(schema: &mut Value, input: &Value, selector: Option<&Operation>) -> Result<()> {
-    let overlay: Overlay = serde_json::from_value(input.clone())?;
+    let overlay: Overlay = crate::documents::decode(input)?;
     if overlay.version != "0.1" {
         return Err(Error::Schema("Unsupported fixture sidecar version.".to_owned()));
     }

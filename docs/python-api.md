@@ -1,8 +1,7 @@
 # Python API reference
 
-Python code lives in `python/`; shared schemas and guides live at the repository
-root. Run development commands from `python/` with uv.
-See [installation](installation.md) for source-build prerequisites.
+Use Riff with Python 3.10 or later. See [installation](installation.md) for setup
+and source-build prerequisites.
 
 ## Construct a factory
 
@@ -19,6 +18,10 @@ Provider registrations map names to `Provider` callables. The fixture file uses
 the [sidecar format](sidecars.md). Model-first construction accepts `providers`;
 use field metadata to attach its fixture hints.
 
+`FixtureFactory`, strategy and metadata classes, `ProviderContext`, and result
+classes are final. Extend generation through custom providers and bind result
+models with `as_model` or `for_model`.
+
 OpenAPI selection options are keyword-only:
 
 | Option | Default | Meaning |
@@ -30,6 +33,7 @@ OpenAPI selection options are keyword-only:
 | `media_type` | `"application/json"` | Exact media type in the content map. |
 
 `from_file` treats a file as a standalone schema when `path=None`.
+Contract and fixture file paths must be valid UTF-8.
 
 ## Generate data
 
@@ -118,8 +122,10 @@ cases. Oracle exceptions propagate. See [minimization](strategies.md#reduce-a-fa
 
 `SchemaError` identifies invalid or unsupported contracts. `GenerationError`
 identifies exhausted search, model decoding/serialization failures, or resource
-limits. `ProviderError` identifies custom-provider exceptions or non-JSON output.
-All inherit `RiffError`. Invalid invocation options raise `ValueError`.
+limits. `ProviderError` identifies ordinary custom-provider exceptions or non-JSON
+output. Cancellation and exit exceptions propagate unchanged.
+All inherit `RiffError`. Invalid option values raise `ValueError`; incompatible
+Python argument types can raise `TypeError`.
 
 Validation supports Draft 4, Draft 7, 2019-09, and 2020-12 (the default), including
 OpenAPI 3.1 dialect inheritance. The [JSON Schema guide](json-schema.md) lists vocabulary,

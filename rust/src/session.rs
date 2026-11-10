@@ -67,7 +67,7 @@ pub fn validate_options(options: impl AsRef<str>) -> Result<GenerationOptions> {
 fn controls<ControlsT: DeserializeOwned>(source: &str) -> Result<ControlsT> {
     let object: serde_json::Map<String, Value> =
         serde_json::from_str(source).map_err(|error| Error::Argument(error.to_string()))?;
-    serde_json::from_value(Value::Object(object))
+    crate::documents::decode(&Value::Object(object))
         .map_err(|error| Error::Argument(error.to_string()))
 }
 
@@ -83,7 +83,7 @@ impl Session {
     ) -> Result<Self> {
         let source: Document = serde_json::from_str(source.as_ref())?;
         let object: serde_json::Map<String, Value> = serde_json::from_str(configuration.as_ref())?;
-        let configuration: Configuration = serde_json::from_value(Value::Object(object))?;
+        let configuration: Configuration = crate::documents::decode(&Value::Object(object))?;
         let document = source.load()?;
         numbers.validate(&document)?;
         if configuration.operation.is_none() && !document.is_object() && !document.is_boolean() {

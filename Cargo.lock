@@ -740,6 +740,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "229ca13b8a15bb0d1487b81ab975bfcd97513416499a8312011b6036e42e0de4"
 dependencies = [
  "libc",
+ "num-bigint",
+ "num-traits",
  "once_cell",
  "portable-atomic",
  "pyo3-build-config",
@@ -960,6 +962,7 @@ dependencies = [
 name = "riff-python"
 version = "0.1.0"
 dependencies = [
+ "num-bigint",
  "pyo3",
  "riff-core",
  "serde_json",

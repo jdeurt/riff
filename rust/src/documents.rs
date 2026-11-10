@@ -13,6 +13,11 @@ use serde_json::{Map, Number, Value};
 
 use crate::{Error, Result};
 
+/// Decode typed fields without projecting arbitrary JSON integers through binary64.
+pub fn decode<T: serde::de::DeserializeOwned>(value: &Value) -> Result<T> {
+    serde_json::from_str(&value.to_string()).map_err(Into::into)
+}
+
 /// Numeric representations accepted by a consumer's JSON interface.
 #[derive(Clone, Copy, Debug)]
 pub enum NumericMode {

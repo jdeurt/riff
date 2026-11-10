@@ -9,6 +9,10 @@ use crate::{Error, Result};
 /// Maximum nesting accepted for contract and JSON input values.
 pub const MAX_INPUT_DEPTH: usize = 128;
 
+/// Conservative bit-length bound for integers within coefficient and decimal-scale limits.
+/// Reject larger host integers before allocating their decimal representation.
+pub const MAX_INTEGER_BITS: u64 = 6804;
+
 pub fn validate_numbers(value: &Value, depth: usize) -> Result<()> {
     if depth > MAX_INPUT_DEPTH {
         return Err(Error::Schema("JSON input nesting exceeds 128 levels.".to_owned()));

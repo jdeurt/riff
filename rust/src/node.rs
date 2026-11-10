@@ -278,7 +278,7 @@ impl Builder<'_> {
             || metadata.source.examples.is_some()
             || metadata.source.strategy.is_some();
         let constraints = if declared { original } else { hint };
-        let data: Keywords = serde_json::from_value(constraints.clone())?;
+        let data: Keywords = crate::documents::decode(constraints)?;
         let checker = Checker { validators: vec![self.validators.get(source)?] };
         let compile = |input: &Value| {
             let pointer = std::ptr::from_ref(input);
@@ -409,7 +409,7 @@ fn validate_declarations(
         Some(Value::String(uri)) => Dialect::select(uri)?,
         _ => inherited,
     };
-    let data: Keywords = serde_json::from_value(schema.clone())?;
+    let data: Keywords = crate::documents::decode(schema)?;
     let metadata = Metadata::parse(object.get("x-fixture"))?;
     for source in std::iter::once(&metadata.source).chain(metadata.failure.iter()) {
         source.validate_names(context.names)?;

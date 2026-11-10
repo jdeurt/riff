@@ -119,3 +119,49 @@ fn signed_and_large_seeds_replay_identical_public_batches() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn complete_sessions_preserve_large_integer_payloads_and_seed_controls() -> Result<()> {
+    let integer: Value = serde_json::from_str(&format!("1{}", "0".repeat(100)))?;
+    let expected = json!({"value":[null,true,integer,0.25,"é"]});
+    let metadata = riff_core::Metadata::parse(Some(&json!({"examples":[expected]})))?;
+    assert_eq!(metadata.source.examples, Some(vec![expected.clone()]));
+    let declarations = [
+        (json!({"const":expected}), json!({})),
+        (json!({"enum":[expected]}), json!({})),
+        (json!({"const":expected,"x-fixture":{"examples":[expected]}}), json!({})),
+        (json!({"x-fixture":{"strategy":{"kind":"values","values":[expected]}}}), json!({})),
+        (
+            json!({}),
+            json!({"fixtures":{"kind":"inline","value":{
+                "version":"0.1", "fields":{"":{"strategy":{"kind":"values","values":[expected]}}}
+            }}}),
+        ),
+    ];
+    let mut no_host = |_: &riff_core::ProviderContext| {
+        Err(Error::Provider("Unexpected host invocation.".to_owned()))
+    };
+    for (schema, configuration) in declarations {
+        let session = Session::new(
+            json!({"kind":"inline","value":schema}).to_string(),
+            configuration.to_string(),
+            NumericMode::NativeFloat,
+        )?;
+        let options = json!({"seed":integer,"profile":"realistic"}).to_string();
+        let values: Value = serde_json::from_str(&session.generate(&options, &mut no_host)?)?;
+        assert_eq!(values, json!([expected]), "Schema: {schema}; configuration: {configuration}");
+        let cases: Vec<riff_core::Case> =
+            serde_json::from_str(&session.success_cases(&options, &mut no_host)?)?;
+        assert_eq!(cases.first().map(|case| &case.value), Some(&expected));
+    }
+    let session = Session::new(
+        r#"{"kind":"inline","value":{"type":"integer","minimum":0,"maximum":100}}"#,
+        "{}",
+        NumericMode::Exact,
+    )?;
+    assert_eq!(
+        session.generate(json!({"seed":integer,"count":20}).to_string(), &mut no_host)?,
+        session.generate(r#"{"seed":0,"count":20}"#, &mut no_host)?,
+    );
+    Ok(())
+}

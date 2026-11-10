@@ -1,10 +1,13 @@
 //! Python values, callbacks, and errors translated for fixture operations.
+mod factory;
+mod json;
+mod metadata;
+mod results;
+
 use pyo3::create_exception;
 use pyo3::exceptions::{PyException, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyFunction;
-use riff_core::{NumericMode, ProviderContext, Session};
-use serde_json::Value;
+use riff_core::NumericMode;
 
 create_exception!(
     _native,
@@ -30,104 +33,16 @@ fn python_error(error: riff_core::Error) -> PyErr {
     }
 }
 
-fn provider_call(
-    function: &Bound<'_, PyFunction>,
-    context: &ProviderContext,
-    failure: &mut Option<PyErr>,
-) -> riff_core::Result<Value> {
-    let request = serde_json::to_string(context)?;
-    match function.call1((request,)).and_then(|value| value.extract::<String>()) {
-        Ok(output) => serde_json::from_str(&output)
-            .map_err(|error| riff_core::Error::Provider(error.to_string())),
-        Err(error) => {
-            let message = error.to_string();
-            *failure = Some(error);
-            Err(riff_core::Error::Provider(message))
-        }
-    }
-}
-
-#[pyclass(frozen, module = "riff._native")]
-struct NativeFactory {
-    session: Session,
-}
-
-#[pymethods]
-impl NativeFactory {
-    #[new]
-    fn new(source: &str, configuration: &str) -> PyResult<Self> {
-        let session =
-            Session::new(source, configuration, NumericMode::NativeFloat).map_err(python_error)?;
-        Ok(Self { session })
-    }
-
-    fn generate(&self, options: &str, provider: &Bound<'_, PyFunction>) -> PyResult<String> {
-        let mut failure = None;
-        let result = self
-            .session
-            .generate(options, &mut |context| provider_call(provider, context, &mut failure));
-        if let Some(error) = failure {
-            return Err(error);
-        }
-        result.map_err(python_error)
-    }
-
-    fn cases(&self, options: &str, provider: &Bound<'_, PyFunction>) -> PyResult<String> {
-        let mut failure = None;
-        let result = self
-            .session
-            .cases(options, &mut |context| provider_call(provider, context, &mut failure));
-        if let Some(error) = failure {
-            return Err(error);
-        }
-        result.map_err(python_error)
-    }
-
-    fn minimize(
-        &self,
-        value: &str,
-        options: &str,
-        oracle: &Bound<'_, PyFunction>,
-    ) -> PyResult<String> {
-        let mut failure = None;
-        let result = self.session.minimize(value, options, &mut |value| {
-            let payload = serde_json::to_string(value)?;
-            match oracle.call1((payload,)).and_then(|value| value.extract::<bool>()) {
-                Ok(result) => Ok(result),
-                Err(error) => {
-                    let message = error.to_string();
-                    failure = Some(error);
-                    Err(riff_core::Error::Provider(message))
-                }
-            }
-        });
-        if let Some(error) = failure {
-            return Err(error);
-        }
-        result.map_err(python_error)
-    }
-
-    fn is_valid(&self, value: &str) -> PyResult<bool> {
-        self.session.is_valid(value).map_err(python_error)
-    }
+#[pyfunction]
+fn strip_fixture_metadata(py: Python<'_>, document: json::JsonInput) -> PyResult<Py<PyAny>> {
+    let json::JsonInput(document) = document;
+    json::to_python(py, &riff_core::strip_metadata(&document))
 }
 
 #[pyfunction]
-fn strip_metadata(document: &str) -> PyResult<String> {
-    let value: Value =
-        serde_json::from_str(document).map_err(riff_core::Error::from).map_err(python_error)?;
-    serde_json::to_string(&riff_core::strip_metadata(&value))
-        .map_err(riff_core::Error::from)
-        .map_err(python_error)
-}
-
-#[pyfunction]
-fn validate_metadata(metadata: &str) -> PyResult<()> {
-    let value: Value =
-        serde_json::from_str(metadata).map_err(riff_core::Error::from).map_err(python_error)?;
-    riff_core::Metadata::parse(Some(&value))
-        .map(|_| ())
-        .map_err(|error| PyValueError::new_err(error.to_string()))
+fn encode_json(value: json::JsonInput) -> String {
+    let json::JsonInput(value) = value;
+    value.to_string()
 }
 
 #[pyfunction]
@@ -138,14 +53,21 @@ fn cli(arguments: Vec<String>) -> (String, String, i32) {
 
 #[pymodule]
 fn _native(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<NativeFactory>()?;
+    module.add_class::<factory::FixtureFactory>()?;
+    module.add_class::<results::SuccessCase>()?;
+    module.add_class::<results::FailureCase>()?;
+    module.add_class::<results::Violation>()?;
+    module.add_class::<results::MinimizationResult>()?;
+    module.add_class::<results::ProviderContext>()?;
+    metadata::register(module)?;
     let python = module.py();
     module.add("RiffError", python.get_type::<RiffError>())?;
     module.add("SchemaError", python.get_type::<SchemaError>())?;
     module.add("GenerationError", python.get_type::<GenerationError>())?;
     module.add("ProviderError", python.get_type::<ProviderError>())?;
-    module.add_function(wrap_pyfunction!(strip_metadata, module)?)?;
-    module.add_function(wrap_pyfunction!(validate_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(strip_fixture_metadata, module)?)?;
+    module.add_function(wrap_pyfunction!(encode_json, module)?)?;
+    module.add_function(wrap_pyfunction!(factory::model_is_valid, module)?)?;
     module.add_function(wrap_pyfunction!(cli, module)?)?;
     Ok(())
 }

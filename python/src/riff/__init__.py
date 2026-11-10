@@ -1,27 +1,27 @@
 """Generate request and response fixtures through Riff's implementation-neutral interface."""
 
-from riff.annotations import Failure, fixture
-from riff.compiler import (
+from riff._native import (
     ChoiceStrategy,
-    FilterStrategy,
-    ProviderStrategy,
-    SchemaStrategy,
-    ValuesStrategy,
-)
-from riff.contracts import (
+    Failure,
     FailureCase,
-    FixtureCase,
-    Provider,
+    FilterStrategy,
+    FixtureFactory,
+    GenerationError,
+    MinimizationResult,
     ProviderContext,
+    ProviderError,
+    ProviderStrategy,
+    RiffError,
+    SchemaError,
+    SchemaStrategy,
     SuccessCase,
+    ValuesStrategy,
     Violation,
+    fixture,
+    strip_fixture_metadata,
 )
-from riff.errors import GenerationError, ProviderError, RiffError, SchemaError
-from riff.factory import FixtureFactory
-from riff.minimize import MinimizationResult
 from riff.models import ModelFactory
-from riff.publication import strip_fixture_metadata
-from riff.types import Expectation, JSONValue, Profile
+from riff.types import Expectation, FixtureCase, JSONValue, Profile, Provider
 
 __all__ = [
     "ChoiceStrategy",

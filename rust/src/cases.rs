@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 use bigdecimal::BigDecimal;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::engine::{Engine, ProviderContext};
@@ -14,7 +14,7 @@ use crate::schema::pointer_token;
 use crate::{Error, Result, Source};
 
 /// One independent validator diagnostic.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Violation {
     /// RFC 6901 payload pointer.
     pub path: String,
@@ -23,7 +23,7 @@ pub struct Violation {
 }
 
 /// A labeled raw fixture; declared outcome is independent of schema validity.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Case {
     /// Exact data to supply to the system under test.
     pub value: Value,

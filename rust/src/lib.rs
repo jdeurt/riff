@@ -32,7 +32,7 @@ pub use error::{Error, Result};
 #[doc(inline)]
 pub use factory::Factory;
 #[doc(inline)]
-pub use limits::MAX_INPUT_DEPTH;
+pub use limits::{MAX_INPUT_DEPTH, MAX_INTEGER_BITS};
 #[doc(inline)]
 pub use metadata::{ConstraintMode, Metadata, Source, Strategy};
 #[doc(inline)]

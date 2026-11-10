@@ -1,5 +1,5 @@
 //! Greedy reduction with caller-owned failure oracles.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use crate::cases::equivalent;
@@ -7,7 +7,7 @@ use crate::node::Node;
 use crate::{Error, Result};
 
 /// A retained reproducer and its oracle budget usage.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct MinimizationResult {
     /// Smallest reproducer found by this greedy traversal.
     pub value: Value,

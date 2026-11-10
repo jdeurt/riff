@@ -2,19 +2,16 @@
 
 from __future__ import annotations
 
-import json
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
-from riff.compiler import JSON_ADAPTER
-from riff.contracts import FailureCase, SuccessCase
-from riff.errors import GenerationError
+from riff._native import FailureCase, GenerationError, SuccessCase, encode_json, model_is_valid
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
 
 if TYPE_CHECKING:
-    from riff.factory import FixtureFactory
+    from riff._native import FixtureFactory
     from riff.types import JSONValue, Profile
 
 
@@ -69,14 +66,11 @@ class ModelFactory(Generic[ModelT]):
 
     def _decode(self, value: JSONValue) -> ModelT:
         try:
-            model = self._model.model_validate_json(json.dumps(value, allow_nan=False), strict=True)
+            model = self._model.model_validate_json(encode_json(value), strict=True)
         except ValidationError as error:
             message = f"Generated value violates bound model {self._model.__name__}: {error}"
             raise GenerationError(message) from error
-        serialized = JSON_ADAPTER.validate_python(
-            model.model_dump(mode="json", by_alias=True, exclude_unset=True, round_trip=True)
-        )
-        if not self._factory.is_valid(serialized):
+        if not model_is_valid(self._factory, model):
             message = f"Serialized bound model {self._model.__name__} violates the original schema."
             raise GenerationError(message)
         return model

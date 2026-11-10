@@ -12,7 +12,8 @@ crate-type = ["cdylib"]
 [dependencies]
 riff-core.workspace = true
 serde_json.workspace = true
-pyo3 = { version = "0.30.1", features = ["extension-module", "abi3-py310"] }
+num-bigint = "0.4"
+pyo3 = { version = "0.30.1", features = ["extension-module", "abi3-py310", "num-bigint"] }
 
 [lints]
 workspace = true

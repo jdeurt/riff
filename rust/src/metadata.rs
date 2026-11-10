@@ -67,16 +67,22 @@ pub enum ConstraintMode {
 #[serde(deny_unknown_fields)]
 pub struct Source {
     /// Registered provider name.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub provider: Option<String>,
     /// Requested provider locale.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub locale: Option<String>,
     /// Provider options; absent differs from an explicitly supplied empty object.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<Map<String, Value>>,
     /// Nonempty example values.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub examples: Option<Vec<Value>>,
     /// Explicit strategy, mutually exclusive with shorthand fields.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub strategy: Option<Strategy>,
     /// Caller-owned explanation for a negative expectation.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
 }
 
@@ -108,7 +114,7 @@ impl Metadata {
         };
         let failure = object.remove("fail");
         reject_nulls(&object)?;
-        let source: Source = serde_json::from_value(Value::Object(object))?;
+        let source: Source = crate::documents::decode(&Value::Object(object))?;
         if source.reason.is_some() {
             return Err(Error::Schema("reason belongs inside fail.".to_owned()));
         }
@@ -119,7 +125,7 @@ impl Metadata {
                     return Err(Error::Schema("fail must be an object.".to_owned()));
                 };
                 reject_nulls(object)?;
-                let parsed: Source = serde_json::from_value(input)?;
+                let parsed: Source = crate::documents::decode(&input)?;
                 parsed.check(true)?;
                 Ok(parsed)
             })
