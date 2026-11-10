@@ -6,10 +6,10 @@ use serde_json::{Map, Value};
 
 use crate::{Error, Metadata, Result};
 
-const MAPS: &[&str] =
+pub const MAPS: &[&str] =
     &["properties", "patternProperties", "dependentSchemas", "$defs", "definitions"];
-const LISTS: &[&str] = &["allOf", "anyOf", "oneOf", "prefixItems"];
-const CHILDREN: &[&str] = &[
+pub const LISTS: &[&str] = &["allOf", "anyOf", "oneOf", "prefixItems"];
+pub const CHILDREN: &[&str] = &[
     "items",
     "additionalItems",
     "additionalProperties",
@@ -23,7 +23,7 @@ const CHILDREN: &[&str] = &[
     "unevaluatedItems",
     "contentSchema",
 ];
-const KEYWORDS: &[&str] = &[
+pub const KEYWORDS: &[&str] = &[
     "$schema",
     "$id",
     "$ref",
@@ -66,8 +66,10 @@ const KEYWORDS: &[&str] = &[
 ];
 
 /// JSON Schema validation vocabulary selected for a contract.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Dialect {
+    /// Draft 4.
+    Draft4,
     /// Draft 7.
     Draft7,
     /// Draft 2019-09.
@@ -80,6 +82,8 @@ pub enum Dialect {
 impl Dialect {
     pub(crate) fn select(value: &str) -> Result<Self> {
         match value.trim_end_matches('#') {
+            "http://json-schema.org/draft-04/schema"
+            | "https://json-schema.org/draft-04/schema" => Ok(Self::Draft4),
             "http://json-schema.org/draft-07/schema"
             | "https://json-schema.org/draft-07/schema" => Ok(Self::Draft7),
             "https://json-schema.org/draft/2019-09/schema" => Ok(Self::Draft2019),
@@ -159,7 +163,7 @@ struct OverlayOperation {
 /// Resolve a standalone or selected `OpenAPI` schema and attach a sidecar.
 ///
 /// # Errors
-/// Rejects unsupported dialects/keywords, nonlocal references, cycles, and ambiguous selectors.
+/// Rejects unsupported dialects/keywords, missing resources, and ambiguous selectors.
 pub fn prepare(
     document: &Value,
     operation: Option<&Operation>,
@@ -173,13 +177,13 @@ pub fn prepare(
         None => (document.clone(), false, None),
         Some(selector) => select_operation(document, selector)?,
     };
-    let mut remaining = 16_384;
-    let mut schema =
-        normalize(&selected, document, openapi30, &BTreeSet::new(), &mut remaining, 0)?;
-    if let (Value::Object(object), Some(dialect)) = (&mut schema, inherited) {
-        let _ = object.entry("$schema").or_insert(Value::String(dialect));
+    let mut selected = selected;
+    if let (Value::Object(object), Some(dialect)) = (&mut selected, &inherited) {
+        let _ = object.entry("$schema").or_insert(Value::String(dialect.clone()));
     }
+    let mut schema = crate::references::bundle(&selected, document, openapi30)?;
     if let Some(overlay) = overlay {
+        schema = crate::references::annotation_schema(&schema)?;
         attach(&mut schema, overlay, operation)?;
     }
     Ok(schema)
@@ -246,9 +250,25 @@ fn object_reference(document: &Value, input: Option<&Value>) -> Result<Map<Strin
 }
 
 pub fn resolve_reference<'a>(document: &'a Value, reference: &str) -> Result<&'a Value> {
-    let local = reference.strip_prefix('#').ok_or_else(|| {
-        Error::Schema("Only local JSON Pointer references are supported.".to_owned())
-    })?;
+    let Some(local) = reference.strip_prefix('#') else {
+        let mut pending = vec![document];
+        while let Some(schema) = pending.pop() {
+            if schema
+                .get("$id")
+                .or_else(|| schema.get("id"))
+                .and_then(Value::as_str)
+                .is_some_and(|uri| uri.trim_end_matches('#') == reference.trim_end_matches('#'))
+            {
+                return Ok(schema);
+            }
+            for location in child_locations(schema) {
+                if let Some(child) = schema.pointer(&location) {
+                    pending.push(child);
+                }
+            }
+        }
+        return Err(Error::Schema(format!("Unresolved supplied resource: {reference}")));
+    };
     let decoded = percent_encoding::percent_decode_str(local)
         .decode_utf8()
         .map_err(|error| Error::Schema(error.to_string()))?;
@@ -271,95 +291,7 @@ fn validate_pointer(pointer: &str) -> Result<()> {
     Ok(())
 }
 
-fn normalize(
-    input: &Value,
-    document: &Value,
-    openapi30: bool,
-    references: &BTreeSet<String>,
-    remaining: &mut usize,
-    depth: usize,
-) -> Result<Value> {
-    *remaining = remaining
-        .checked_sub(1)
-        .ok_or_else(|| Error::Schema("Schema expansion node budget exhausted.".to_owned()))?;
-    if depth > 128 {
-        return Err(Error::Schema("Schema expansion depth exceeded.".to_owned()));
-    }
-    if input.is_boolean() {
-        return Ok(input.clone());
-    }
-    let object = input
-        .as_object()
-        .ok_or_else(|| Error::Schema("Each schema must be an object or boolean.".to_owned()))?;
-    if let Some(reference) = object.get("$ref") {
-        let reference = reference
-            .as_str()
-            .ok_or_else(|| Error::Schema("Invalid schema reference.".to_owned()))?;
-        if object.len() != 1 {
-            return Err(Error::Schema("$ref siblings are unsupported; use allOf.".to_owned()));
-        }
-        if references.contains(reference) {
-            return Err(Error::Schema("Recursive schema reference.".to_owned()));
-        }
-        let mut nested = references.clone();
-        let _ = nested.insert(reference.to_owned());
-        return normalize(
-            resolve_reference(document, reference)?,
-            document,
-            openapi30,
-            &nested,
-            remaining,
-            depth + 1,
-        );
-    }
-    let mut result = object.clone();
-    let _ = result.remove("$id");
-    let _ = result.remove("$defs");
-    let _ = result.remove("definitions");
-    for (keyword, value) in &mut result {
-        if !KEYWORDS.contains(&keyword.as_str())
-            && !MAPS.contains(&keyword.as_str())
-            && !LISTS.contains(&keyword.as_str())
-            && !CHILDREN.contains(&keyword.as_str())
-            && !keyword.starts_with("x-")
-        {
-            return Err(Error::Schema(format!("Unsupported schema keyword: {keyword}")));
-        }
-        if keyword == "$schema" {
-            let uri =
-                value.as_str().ok_or_else(|| Error::Schema("$schema must be a URI.".to_owned()))?;
-            let _ = Dialect::select(uri)?;
-        }
-        if MAPS.contains(&keyword.as_str()) || keyword == "dependencies" {
-            let children = value
-                .as_object_mut()
-                .ok_or_else(|| Error::Schema(format!("{keyword} must be an object.")))?;
-            for child in children.values_mut() {
-                if keyword == "dependencies" && child.is_array() {
-                    continue;
-                }
-                *child = normalize(child, document, openapi30, references, remaining, depth + 1)?;
-            }
-        } else if LISTS.contains(&keyword.as_str()) || (keyword == "items" && value.is_array()) {
-            let children = value
-                .as_array_mut()
-                .ok_or_else(|| Error::Schema(format!("{keyword} must be an array.")))?;
-            for child in children {
-                *child = normalize(child, document, openapi30, references, remaining, depth + 1)?;
-            }
-        } else if CHILDREN.contains(&keyword.as_str()) {
-            *value = normalize(value, document, openapi30, references, remaining, depth + 1)?;
-        }
-    }
-    if openapi30 {
-        normalize_openapi30(&mut result)?;
-    } else if result.contains_key("nullable") {
-        return Err(Error::Schema("nullable requires OpenAPI 3.0; use a null type.".to_owned()));
-    }
-    Ok(Value::Object(result))
-}
-
-fn normalize_openapi30(object: &mut Map<String, Value>) -> Result<()> {
+pub fn normalize_openapi30(object: &mut Map<String, Value>) -> Result<()> {
     for (exclusive, inclusive) in [("exclusiveMinimum", "minimum"), ("exclusiveMaximum", "maximum")]
     {
         let value = object.remove(exclusive).unwrap_or(Value::Bool(false));

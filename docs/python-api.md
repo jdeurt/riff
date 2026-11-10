@@ -121,13 +121,14 @@ identifies exhausted search, model decoding/serialization failures, or resource
 limits. `ProviderError` identifies custom-provider exceptions or non-JSON output.
 All inherit `RiffError`. Invalid invocation options raise `ValueError`.
 
-Validation supports Draft 7, 2019-09, and 2020-12 (the default), including OpenAPI
-3.1 dialect inheritance. The [JSON Schema guide](json-schema.md) lists vocabulary,
+Validation supports Draft 4, Draft 7, 2019-09, and 2020-12 (the default), including
+OpenAPI 3.1 dialect inheritance. The [JSON Schema guide](json-schema.md) lists vocabulary,
 format behavior, and exclusions. Candidate generation is bounded; it does not
 solve every satisfiable combination or prove unsatisfiability on exhaustion.
 
 Structural generation limits depth to 32 and string/collection sizes to 1024.
-Unspecified maxima prefer 32-character strings and 5-item arrays. Open objects
+Unspecified maxima prefer 32-character strings and 5-item arrays, with smaller
+structures favored at greater nesting depths and after rejection. Open objects
 explore up to two extra keys beyond their declared property count. Each valid-body
 draw has a shared candidate budget of `100 * max_attempts`,
 with per-node retry limits too. A negative-source draw starts a separate budget;

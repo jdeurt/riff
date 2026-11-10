@@ -13,7 +13,7 @@ fn semantic_providers_drive_replayable_valid_batches_and_declared_failures() -> 
             "status": { "enum": ["active", "inactive"], "x-fixture": {"strategy": {"kind": "values", "values": ["active"]}, "fail": {"examples": ["inactive"]}} }
         }
     });
-    let factory = Factory::new(&schema, BTreeSet::from(["acme.id".to_owned()]))?;
+    let factory = Factory::with_providers(&schema, BTreeSet::from(["acme.id".to_owned()]))?;
     let options = GenerationOptions {
         count: 20,
         seed: Some(u64::MAX),
@@ -21,12 +21,12 @@ fn semantic_providers_drive_replayable_valid_batches_and_declared_failures() -> 
         ..GenerationOptions::default()
     };
     let mut provider = |_context: &ProviderContext| Ok(json!("acct_0123456789abcdef"));
-    let first = factory.generate(&options, &mut provider)?;
-    assert_eq!(first, factory.generate(&options, &mut provider)?);
+    let first = factory.generate_with(&options, &mut provider)?;
+    assert_eq!(first, factory.generate_with(&options, &mut provider)?);
     assert_eq!(first.len(), 20);
     assert!(first.iter().all(|value| value.get("id") == Some(&json!("acct_0123456789abcdef"))
         && value.get("status") == Some(&json!("active"))));
-    for case in factory.failure_cases(&options, &mut provider)? {
+    for case in factory.failure_cases_with(&options, &mut provider)? {
         assert_eq!(case.target.as_deref(), Some("/status"));
         assert_eq!(case.value.get("status"), Some(&json!("inactive")));
         assert!(case.schema_valid);
@@ -37,7 +37,7 @@ fn semantic_providers_drive_replayable_valid_batches_and_declared_failures() -> 
 
 #[test]
 fn minimization_keeps_the_caller_failure_and_original_input() -> Result<()> {
-    let factory = Factory::new(
+    let factory = Factory::with_providers(
         &json!({"type":"object", "required":["name"], "properties":{"name":{"type":"string","minLength":1}}}),
         BTreeSet::new(),
     )?;
@@ -59,7 +59,7 @@ fn extreme_numeric_exponents_fail_before_decimal_expansion() -> Result<()> {
         r#"{"type":"integer","multipleOf":1e-1000000000}"#,
     ] {
         let schema: Value = serde_json::from_str(text)?;
-        let result = Factory::new(&schema, BTreeSet::new());
+        let result = Factory::with_providers(&schema, BTreeSet::new());
         assert!(
             matches!(result, Err(Error::Schema(message)) if message.contains("supported limit"))
         );
@@ -74,18 +74,19 @@ fn exclusive_singleton_ranges_use_exact_rational_indexing() -> Result<()> {
     let schema: Value = serde_json::from_str(&format!(
         r#"{{"type":"integer","exclusiveMinimum":{lower},"maximum":{upper},"multipleOf":3}}"#
     ))?;
-    let factory = Factory::new(&schema, BTreeSet::new())?;
+    let factory = Factory::with_providers(&schema, BTreeSet::new())?;
     let options = GenerationOptions { count: 3, seed: Some(42), ..GenerationOptions::default() };
     let expected: Value = serde_json::from_str(&upper)?;
-    let actual = factory
-        .generate(&options, &mut |_| Err(Error::Provider("No provider is needed.".to_owned())))?;
+    let actual = factory.generate_with(&options, &mut |_| {
+        Err(Error::Provider("No provider is needed.".to_owned()))
+    })?;
     assert_eq!(actual, vec![expected; 3]);
     Ok(())
 }
 
 #[test]
 fn provider_numbers_obey_allocation_limits_before_validation() -> Result<()> {
-    let factory = Factory::new(
+    let factory = Factory::with_providers(
         &json!({"x-fixture":{"provider":"extreme"}}),
         BTreeSet::from(["extreme".to_owned()]),
     )?;
@@ -93,8 +94,9 @@ fn provider_numbers_obey_allocation_limits_before_validation() -> Result<()> {
         profile: riff_core::Profile::Realistic,
         ..GenerationOptions::default()
     };
-    let result = factory
-        .generate(&options, &mut |_| serde_json::from_str("1e1000000000").map_err(Error::from));
+    let result = factory.generate_with(&options, &mut |_| {
+        serde_json::from_str("1e1000000000").map_err(Error::from)
+    });
     assert!(matches!(result, Err(Error::Provider(message)) if message.contains("numeric")));
     Ok(())
 }

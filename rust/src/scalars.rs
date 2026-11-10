@@ -55,7 +55,9 @@ pub fn regex_value(pattern: &str, random: &mut impl RngCore) -> Result<String> {
     } else {
         pattern.strip_suffix('$').unwrap_or(pattern)
     };
-    let compiled = rand_regex::Regex::compile(pattern, 32).map_err(|error| {
+    let translated = jsonschema_regex::to_rust_regex(pattern)
+        .map_err(|()| Error::Generation("Unsupported ECMAScript pattern generation.".to_owned()))?;
+    let compiled = rand_regex::Regex::compile(&translated, 32).map_err(|error| {
         Error::Generation(format!(
             "Unsupported regex generation; use examples or a provider: {error}"
         ))

@@ -102,7 +102,7 @@ impl Session {
         }
         let schema =
             crate::prepare(&document, configuration.operation.as_ref(), fixtures.as_ref())?;
-        let factory = Factory::new(&schema, configuration.providers)?;
+        let factory = Factory::with_providers(&schema, configuration.providers)?;
         Ok(Self { factory, numbers })
     }
 
@@ -116,7 +116,7 @@ impl Session {
         provider: &mut impl FnMut(&ProviderContext) -> Result<Value>,
     ) -> Result<String> {
         let options = self.options(options.as_ref())?;
-        let values = self.factory.generate(&options, provider)?;
+        let values = self.factory.generate_with(&options, provider)?;
         self.encode(&serde_json::to_value(values)?)
     }
 
@@ -177,7 +177,7 @@ impl Session {
         let cases = match expectation {
             Expectation::Pass => self
                 .factory
-                .generate(options, provider)?
+                .generate_with(options, provider)?
                 .into_iter()
                 .map(|value| Case {
                     value,
@@ -188,7 +188,7 @@ impl Session {
                     reason: None,
                 })
                 .collect(),
-            Expectation::Fail => self.factory.failure_cases(options, provider)?,
+            Expectation::Fail => self.factory.failure_cases_with(options, provider)?,
         };
         self.encode(&serde_json::to_value(
             cases

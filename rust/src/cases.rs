@@ -142,7 +142,7 @@ fn targets<'a>(
         for (index, child) in values.iter().enumerate() {
             let location = format!("{pointer}/{index}");
             let declared = node.tuple.get(index).unwrap_or_else(|| {
-                if node.contract.get("items").is_some_and(Value::is_array) {
+                if node.sampling_schema.get("items").is_some_and(Value::is_array) {
                     &node.additional_items
                 } else {
                     &node.items
@@ -221,7 +221,7 @@ fn evaluated_items(
     include_unevaluated: bool,
 ) -> Result<BTreeSet<usize>> {
     if node.applied.items
-        || (node.contract.get("items").is_some_and(Value::is_array)
+        || (node.sampling_schema.get("items").is_some_and(Value::is_array)
             && node.applied.additional_items)
         || (include_unevaluated && node.unevaluated_items.is_some())
     {

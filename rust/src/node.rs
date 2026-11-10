@@ -1,14 +1,17 @@
 //! Compile untrusted schema data into concrete generation constraints.
-use std::collections::{BTreeMap, BTreeSet};
+use std::cell::RefCell;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::str::FromStr;
 use std::sync::Arc;
 
 use bigdecimal::BigDecimal;
 
-use jsonschema::{Draft, Validator};
+use jsonschema::{ValidationError, Validator};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use crate::contracts::DeclaredContract;
+use crate::location::SchemaLocation;
 use crate::metadata::BUILTINS;
 use crate::schema::{Dialect, child_locations, prepare};
 use crate::{Error, Metadata, Result, Source, Strategy};
@@ -69,16 +72,17 @@ pub struct Keywords {
 #[derive(Clone, Debug)]
 pub enum Node {
     Boolean(bool),
-    Schema(Box<SchemaNode>),
+    Schema(Arc<SchemaNode>),
 }
 
 #[derive(Clone, Debug)]
 pub struct SchemaNode {
-    pub contract: Value,
+    pub sampling_schema: Value,
+    pub declared: Arc<DeclaredContract>,
     pub dialect: Dialect,
     pub data: Keywords,
     pub metadata: Metadata,
-    pub validator: Arc<Validator>,
+    pub validator: Checker,
     pub constant_present: bool,
     pub properties: BTreeMap<String, Node>,
     pub patterns: Vec<Pattern>,
@@ -119,97 +123,193 @@ pub struct Compilation<'a> {
     pub names: &'a BTreeSet<String>,
 }
 
-pub fn validator(schema: &Value, dialect: Dialect) -> Result<Arc<Validator>> {
-    let draft = match dialect {
-        Dialect::Draft7 => Draft::Draft7,
-        Dialect::Draft2019 => Draft::Draft201909,
-        Dialect::Draft2020 => Draft::Draft202012,
-    };
-    let mut contract = schema.clone();
-    remove_dialect_annotations(&mut contract, dialect)?;
-    jsonschema::options()
-        .with_draft(draft)
-        .should_validate_formats(true)
-        .should_ignore_unknown_formats(true)
-        .build(&contract)
-        .map(Arc::new)
-        .map_err(|error| Error::Schema(format!("Invalid JSON Schema: {error}")))
+#[derive(Clone, Debug)]
+pub struct Checker {
+    validators: Vec<Arc<Validator>>,
 }
 
-fn remove_dialect_annotations(schema: &mut Value, dialect: Dialect) -> Result<()> {
-    if let Some(Value::String(uri)) = schema.get("$schema")
-        && Dialect::select(uri)? != dialect
-    {
-        return Err(Error::Schema("Nested dialect switching is unsupported.".to_owned()));
+impl Checker {
+    pub fn is_valid(&self, value: &Value) -> bool {
+        self.validators.iter().all(|validator| validator.is_valid(value))
     }
-    let locations = child_locations(schema);
-    for location in locations {
-        if let Some(child) = schema.pointer_mut(&location) {
-            remove_dialect_annotations(child, dialect)?;
+
+    pub fn iter_errors<'a>(
+        &'a self,
+        value: &'a Value,
+    ) -> impl Iterator<Item = ValidationError<'a>> + 'a {
+        self.validators.iter().flat_map(move |validator| validator.iter_errors(value))
+    }
+
+    fn intersect(&self, right: &Self) -> Self {
+        let mut validators = self.validators.clone();
+        for validator in &right.validators {
+            if !validators.iter().any(|existing| Arc::ptr_eq(existing, validator)) {
+                validators.push(validator.clone());
+            }
         }
+        Self { validators }
     }
-    if let Some(object) = schema.as_object_mut() {
-        let _ = object.remove("$schema");
-        let inactive: &[&str] = match dialect {
-            Dialect::Draft7 => &[
-                "dependentRequired",
-                "dependentSchemas",
-                "unevaluatedProperties",
-                "unevaluatedItems",
-                "prefixItems",
-                "minContains",
-                "maxContains",
-            ],
-            Dialect::Draft2019 => &["dependencies", "prefixItems"],
-            Dialect::Draft2020 => &["dependencies", "additionalItems"],
-        };
-        for keyword in inactive {
-            let _ = object.remove(*keyword);
+}
+
+const VALIDATION_DOCUMENT: &str = "https://riff.invalid/validation-document";
+
+pub struct Validators {
+    registry: jsonschema::Registry<'static>,
+    cache: RefCell<BTreeMap<SchemaLocation, Arc<Validator>>>,
+}
+
+impl Validators {
+    fn new(schema: &Value) -> Result<Self> {
+        let root = jsonschema::options()
+            .should_validate_formats(true)
+            .should_ignore_unknown_formats(true)
+            .build(schema)
+            .map_err(|error| Error::Schema(error.to_string()))?;
+        let registry = jsonschema::Registry::new()
+            .retrieve_known_draft_meta_schemas(false)
+            .add(VALIDATION_DOCUMENT, schema.clone())
+            .and_then(jsonschema::RegistryBuilder::prepare)
+            .map_err(|error| Error::Schema(error.to_string()))?;
+        Ok(Self {
+            registry,
+            cache: RefCell::new(BTreeMap::from([(SchemaLocation::root(), Arc::new(root))])),
+        })
+    }
+
+    pub fn get(&self, location: &SchemaLocation) -> Result<Arc<Validator>> {
+        if let Some(validator) = self.cache.borrow().get(location) {
+            return Ok(validator.clone());
         }
+        let target = location.reference(VALIDATION_DOCUMENT);
+        let schema = json!({"$ref":target});
+        let validator = jsonschema::options()
+            .with_registry(&self.registry)
+            .should_validate_formats(true)
+            .should_ignore_unknown_formats(true)
+            .build(&schema)
+            .map_err(|error| Error::Schema(error.to_string()))?;
+        let validator = Arc::new(validator);
+        let _ = self.cache.borrow_mut().insert(location.clone(), validator.clone());
+        Ok(validator)
     }
-    Ok(())
+}
+
+struct Builder<'a> {
+    document: &'a Value,
+    sources: &'a BTreeMap<String, SchemaLocation>,
+    validators: &'a Validators,
+    paths: HashMap<*const Value, String>,
+    resources: Arc<serde_json::Map<String, Value>>,
+    cache: RefCell<BTreeMap<SchemaLocation, HashMap<Value, Node>>>,
 }
 
 impl Node {
     pub fn compile(schema: &Value, inherited: Dialect, context: &Compilation<'_>) -> Result<Self> {
-        validate_declarations(schema, inherited, context)?;
-        Self::build(schema, inherited)
+        let validators = Validators::new(schema)?;
+        validate_declarations(schema, inherited, context, &SchemaLocation::root(), &validators)?;
+        let plan = crate::references::sampling_schema(schema, &validators)?;
+        let mut builder = Builder {
+            document: schema,
+            sources: &plan.sources,
+            validators: &validators,
+            paths: HashMap::new(),
+            resources: Arc::new(
+                schema.get("$defs").and_then(Value::as_object).cloned().unwrap_or_default(),
+            ),
+            cache: RefCell::new(BTreeMap::new()),
+        };
+        builder.index(&plan.schema, "#");
+        builder.build(&plan.schema, "#", inherited)
+    }
+}
+
+impl Builder<'_> {
+    fn index(&mut self, input: &Value, path: &str) {
+        let _ = self.paths.insert(std::ptr::from_ref(input), path.to_owned());
+        for location in child_locations(input) {
+            if let Some(child) = input.pointer(&location) {
+                self.index(child, &format!("{path}{location}"));
+            }
+        }
     }
 
-    fn build(schema: &Value, inherited: Dialect) -> Result<Self> {
-        if let Value::Bool(value) = schema {
-            return Ok(Self::Boolean(*value));
+    fn build(&self, schema: &Value, path: &str, inherited: Dialect) -> Result<Node> {
+        let source = self
+            .sources
+            .get(path)
+            .ok_or_else(|| Error::Schema(format!("Missing original schema for {path}")))?;
+        if path != "#"
+            && let Some(node) =
+                self.cache.borrow().get(source).and_then(|nodes| nodes.get(schema)).cloned()
+        {
+            return Ok(node);
         }
-        let object = schema
+        let original = source.resolve(self.document)?;
+        let node = self.build_node(schema, original, source, inherited)?;
+        let _ = self
+            .cache
+            .borrow_mut()
+            .entry(source.clone())
+            .or_default()
+            .insert(schema.clone(), node.clone());
+        Ok(node)
+    }
+
+    fn build_node(
+        &self,
+        schema: &Value,
+        original: &Value,
+        source: &SchemaLocation,
+        inherited: Dialect,
+    ) -> Result<Node> {
+        if let Value::Bool(value) = schema
+            && original.is_boolean()
+        {
+            return Ok(Node::Boolean(*value));
+        }
+        let empty = json!({"enum":[]});
+        let hint = if schema.is_boolean() { &empty } else { schema };
+        let object = hint
             .as_object()
-            .ok_or_else(|| Error::Schema("Expected a schema object.".to_owned()))?;
-        let dialect = match object.get("$schema") {
-            Some(Value::String(uri)) => Dialect::select(uri)?,
-            _ => inherited,
+            .ok_or_else(|| Error::Schema("Expected a sampling schema object.".to_owned()))?;
+        let dialect = inherited;
+        let metadata = Metadata::parse(original.get("x-fixture"))?;
+        let declared = metadata.source.provider.is_some()
+            || metadata.source.examples.is_some()
+            || metadata.source.strategy.is_some();
+        let constraints = if declared { original } else { hint };
+        let data: Keywords = serde_json::from_value(constraints.clone())?;
+        let checker = Checker { validators: vec![self.validators.get(source)?] };
+        let compile = |input: &Value| {
+            let pointer = std::ptr::from_ref(input);
+            let child_path = self
+                .paths
+                .get(&pointer)
+                .ok_or_else(|| Error::Schema("Missing sampling node location.".to_owned()))?;
+            self.build(input, child_path, dialect)
         };
-        let data: Keywords = serde_json::from_value(schema.clone())?;
-        let metadata = Metadata::parse(object.get("x-fixture"))?;
-        let checker = validator(schema, dialect)?;
-        let compile = |input: &Value| Self::build(input, dialect);
         let optional = |name: &str| object.get(name).map(compile).transpose();
         let properties = compile_map(object.get("properties"), &compile)?;
         let pattern_nodes = compile_map(object.get("patternProperties"), &compile)?;
         let patterns = pattern_nodes
             .into_iter()
             .map(|(source, node)| {
-                let regex = fancy_regex::Regex::new(&source)
+                let translated = jsonschema_regex::to_rust_regex(&source).map_err(|()| {
+                    Error::Schema("Invalid ECMAScript property pattern.".to_owned())
+                })?;
+                let regex = fancy_regex::Regex::new(&translated)
                     .map_err(|error| Error::Schema(error.to_string()))?;
                 Ok(Pattern { source, regex, node })
             })
             .collect::<Result<_>>()?;
-        let additional = optional("additionalProperties")?.unwrap_or(Self::Boolean(true));
+        let additional = optional("additionalProperties")?.unwrap_or(Node::Boolean(true));
         let raw_items = object.get("items");
         let items_array = raw_items.and_then(Value::as_array);
         let (items, tuple) = if let Some(values) = items_array {
-            (Self::Boolean(true), values.iter().map(compile).collect::<Result<_>>()?)
+            (Node::Boolean(true), values.iter().map(compile).collect::<Result<_>>()?)
         } else {
             (
-                optional("items")?.unwrap_or(Self::Boolean(true)),
+                optional("items")?.unwrap_or(Node::Boolean(true)),
                 if dialect == Dialect::Draft2020 {
                     compile_list(object.get("prefixItems"), &compile)?
                 } else {
@@ -218,19 +318,23 @@ impl Node {
             )
         };
         let dependencies = compile_dependencies(object, &data, dialect, &compile)?;
-        Ok(Self::Schema(Box::new(SchemaNode {
-            contract: schema.clone(),
+        Ok(Node::Schema(Arc::new(SchemaNode {
+            sampling_schema: schema.clone(),
+            declared: Arc::new(DeclaredContract::Schema {
+                value: original.clone(),
+                resources: self.resources.clone(),
+            }),
             dialect,
             data,
             metadata,
             validator: checker,
-            constant_present: object.contains_key("const"),
+            constant_present: constraints.get("const").is_some(),
             properties,
             patterns,
             additional,
             items,
             tuple,
-            additional_items: optional("additionalItems")?.unwrap_or(Self::Boolean(true)),
+            additional_items: optional("additionalItems")?.unwrap_or(Node::Boolean(true)),
             all_of: compile_list(object.get("allOf"), &compile)?,
             any_of: compile_list(object.get("anyOf"), &compile)?,
             one_of: compile_list(object.get("oneOf"), &compile)?,
@@ -258,16 +362,34 @@ impl Node {
             },
         })))
     }
+}
+
+impl Node {
     pub fn valid(&self, value: &Value) -> bool {
         match self {
             Self::Boolean(valid) => *valid,
             Self::Schema(node) => node.validator.is_valid(value),
         }
     }
-    pub fn contract(&self) -> Value {
+    pub fn sampling_schema(&self) -> Value {
         match self {
             Self::Boolean(value) => Value::Bool(*value),
-            Self::Schema(node) => node.contract.clone(),
+            Self::Schema(node) => node.sampling_schema.clone(),
+        }
+    }
+    pub fn can_sample(&self) -> bool {
+        match self {
+            Self::Boolean(value) => *value,
+            Self::Schema(node) => {
+                node.metadata.source.provider.is_some()
+                    || node.metadata.source.examples.is_some()
+                    || node.metadata.source.strategy.is_some()
+                    || (node.constant_present && node.validator.is_valid(&node.data.constant))
+                    || node.data.enumeration.as_ref().is_some_and(|values| {
+                        values.iter().any(|value| node.validator.is_valid(value))
+                    })
+                    || !node.impossible()
+            }
         }
     }
     pub const fn is_false(&self) -> bool {
@@ -279,6 +401,8 @@ fn validate_declarations(
     schema: &Value,
     inherited: Dialect,
     context: &Compilation<'_>,
+    path: &SchemaLocation,
+    validators: &Validators,
 ) -> Result<()> {
     let Some(object) = schema.as_object() else { return Ok(()) };
     let dialect = match object.get("$schema") {
@@ -294,19 +418,18 @@ fn validate_declarations(
             validate_predicates(strategy, context, dialect)?;
         }
     }
-    if let Some(values) = &metadata.source.examples
-        && values
-            .iter()
-            .any(|value| validator(schema, dialect).is_ok_and(|checker| !checker.is_valid(value)))
-    {
-        return Err(Error::Schema(
-            "Positive shorthand examples must satisfy the annotated schema.".to_owned(),
-        ));
+    if let Some(values) = &metadata.source.examples {
+        let checker = validators.get(path)?;
+        if values.iter().any(|value| !checker.is_valid(value)) {
+            return Err(Error::Schema(
+                "Positive shorthand examples must satisfy the annotated schema.".to_owned(),
+            ));
+        }
     }
 
     for pointer in child_locations(schema) {
         if let Some(child) = schema.pointer(&pointer) {
-            validate_declarations(child, dialect, context)?;
+            validate_declarations(child, dialect, context, &path.child(&pointer), validators)?;
         }
     }
     Ok(())
@@ -442,11 +565,36 @@ fn validate_predicates(
 }
 
 impl SchemaNode {
+    fn impossible(&self) -> bool {
+        if self.data.enumeration.as_ref().is_some_and(Vec::is_empty)
+            || self.all_of.iter().any(|node| !node.can_sample())
+            || (!self.any_of.is_empty() && self.any_of.iter().all(|node| !node.can_sample()))
+            || (!self.one_of.is_empty() && self.one_of.iter().all(|node| !node.can_sample()))
+        {
+            return true;
+        }
+        match self.data.kind {
+            Some(Types::Single(Kind::Array)) => {
+                self.data.min_items > self.data.max_items.unwrap_or(usize::MAX)
+                    || (self.items.is_false()
+                        && self.applied.items
+                        && self.data.min_items > self.tuple.len())
+            }
+            Some(Types::Single(Kind::Object)) => {
+                self.data.min_properties > self.data.max_properties.unwrap_or(usize::MAX)
+                    || self.data.required.iter().any(|name| {
+                        self.properties.get(name).is_some_and(|node| !node.can_sample())
+                    })
+            }
+            _ => false,
+        }
+    }
+
     pub fn item(&self, index: usize) -> Node {
         if let Some(child) = self.tuple.get(index) {
             return child.clone();
         }
-        if self.contract.get("items").is_some_and(Value::is_array) {
+        if self.sampling_schema.get("items").is_some_and(Value::is_array) {
             if !self.applied.additional_items
                 && !self.applied.items
                 && let Some(child) = &self.unevaluated_items
@@ -485,10 +633,12 @@ pub fn intersect(left: &Node, right: &Node) -> Result<Node> {
     let (Node::Schema(left), Node::Schema(right)) = (left, right) else {
         return Ok(if matches!(left, Node::Boolean(true)) { right.clone() } else { left.clone() });
     };
-    let mut result = left.clone();
-    result.contract = json!({"allOf": [left.contract, right.contract]});
-    result.validator = validator(&result.contract, left.dialect)?;
-    if right.contract.get("x-fixture").is_some() {
+    let mut result = left.as_ref().clone();
+    result.sampling_schema = json!({"allOf": [left.sampling_schema, right.sampling_schema]});
+    result.declared =
+        Arc::new(DeclaredContract::Intersection(left.declared.clone(), right.declared.clone()));
+    result.validator = left.validator.intersect(&right.validator);
+    if right.sampling_schema.get("x-fixture").is_some() {
         result.metadata.clone_from(&right.metadata);
     }
     if right.data.kind.is_some() {
@@ -558,7 +708,7 @@ pub fn intersect(left: &Node, right: &Node) -> Result<Node> {
     result.applied.items |= right.applied.items;
     result.applied.additional_items |= right.applied.additional_items;
     merge_limits(&mut result.data, &right.data);
-    Ok(Node::Schema(result))
+    Ok(Node::Schema(Arc::new(result)))
 }
 
 fn merge_limits(result: &mut Keywords, right: &Keywords) {

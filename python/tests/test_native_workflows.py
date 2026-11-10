@@ -206,3 +206,29 @@ def test_minimization_tries_zero_for_supported_arbitrary_precision_integers() ->
     assert any(
         isinstance(value, int) and not isinstance(value, bool) and value == 0 for value in calls
     )
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Linux memory limits isolate this regression.")
+def test_large_annotations_do_not_amplify_reference_scope_memory() -> None:
+    script = """
+import resource
+from riff import FixtureFactory
+resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+schema = {
+    "$id": "https://example.test/root",
+    "$dynamicAnchor": "node",
+    "description": "x" * (1024 * 1024),
+    "type": "integer",
+    "const": 7,
+    "$defs": {f"N{index}": {"const": 7} for index in range(1000)},
+    "allOf": [{"$ref": f"#/$defs/N{index}"} for index in range(1000)],
+}
+assert FixtureFactory.from_schema(schema).generate(seed=42) == [7]
+print("bounded reference memory passed")
+"""
+    result = subprocess.run(  # noqa: S603 -- Fixed regression script with an OS memory cap.
+        [sys.executable, "-c", script], capture_output=True, text=True, check=False, timeout=20
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout == "bounded reference memory passed\n"

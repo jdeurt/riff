@@ -7,7 +7,7 @@ values or a custom provider can supply candidates for those cases.
 
 ## Dialects
 
-Standalone schemas default to 2020-12. `$schema` selects Draft 7, 2019-09, or
+Standalone schemas default to 2020-12. `$schema` selects Draft 4, Draft 7, 2019-09, or
 2020-12. OpenAPI 3.1's `jsonSchemaDialect` is inherited by body schemas, and a
 schema's own `$schema` takes precedence. OpenAPI 3.0 nullable types and boolean
 exclusive bounds are normalized before generation.
@@ -27,8 +27,7 @@ and `dependentSchemas`. Draft 7 and 2019-09 tuples use an `items` array with
 | Objects | `properties`, `required`, `patternProperties`, `additionalProperties`, `propertyNames`, property counts, dependencies, `unevaluatedProperties` |
 | Arrays | Item/prefix/tuple schemas, sizes, uniqueness, `contains`, `minContains`, `maxContains`, `unevaluatedItems` |
 
-The independent validator enforces these constraints, including applicable
-composition scopes. Generation has targeted handling for common combinations;
+Riff enforces these constraints, including applicable composition scopes. Generation has targeted handling for common combinations;
 it is not a complete constraint solver. Negations, mutually restrictive patterns,
 and complex overlapping compositions can require supplied examples/providers or
 more attempts. Exhaustion raises `GenerationError`, never an invalid success case.
@@ -51,6 +50,7 @@ Pattern-matched properties are validated by every matching `patternProperties`
 schema. They are not forbidden merely because `additionalProperties` is false.
 Property-name rules and `unevaluatedProperties` also participate in validation.
 
+Generation favors smaller nested structures and simpler candidates after rejection.
 The default object size preference explores up to two keys beyond the declared
 property count, subject to schema limits and the candidate budget. Extra keys
 are sampled, not forced into every fixture: omissions and empty objects also
@@ -63,20 +63,24 @@ provides typed access to known fields.
 ## Formats and references
 
 Recognized standard formats are asserted using the selected dialect's format
-checker. Built-in generators cover email/IDN email, hostnames, IPv4/IPv6, UUID,
-URI/IRI references, URI templates, date/time/duration, JSON Pointers, and regex
-strings. An unknown format remains an annotation, as JSON Schema specifies;
-other constraints still apply. Regex validation supports backtracking constructs;
-pattern sampling supports a smaller set. Supply explicit examples or a provider
-when Riff cannot sample a pattern. Sampling limits patterns to 1024 UTF-8 bytes,
-repetitions to 32, and expansion capacity to 4096. Regex semantics can differ
-from your application's validator.
+checker. For example, `uuid` remains an annotation in Draft 7. Built-in generators
+cover email/IDN email, hostnames, IPv4/IPv6, UUID, URI/IRI references, URI templates,
+date/time/duration, JSON Pointers, and regex strings. An unknown format remains an
+annotation, as JSON Schema specifies; other constraints still apply. Regex
+character classes follow ECMAScript semantics, including ASCII `\d`.
+Regex validation supports backtracking constructs; pattern sampling supports a
+smaller set. Supply explicit examples or a provider when Riff cannot sample a
+pattern. Sampling limits patterns to 1024 UTF-8 bytes, repetitions to 32, and
+expansion capacity to 4096. Regex semantics can differ from your application's
+validator.
 
-Local acyclic JSON Pointer references are expanded against the supplied document.
-Remote references, recursive/dynamic references, anchor references, reference
-siblings, custom vocabularies, and URI resource/base-ID scoping are unsupported in
-this release. Nested dialect switching is also unsupported. Unsupported schema
-validation keywords are rejected.
+JSON Pointers, `$id` resource scoping, relative URI references, and anchors are
+supported. Include every referenced resource in the supplied document; Riff does
+not fetch missing resources. Recursive references, Draft 2019-09 `$recursiveRef`,
+and 2020-12 `$dynamicRef` use finite generation budgets. Embedded resources retain
+their declared dialect. Modern `$ref` siblings apply together; Draft 4 and Draft 7
+ignore validation siblings. Custom vocabularies remain unsupported.
+
 Use an explicit provider or explicit values when generation needs domain rules
 beyond the contract.
 
@@ -93,8 +97,8 @@ The enclosing case separately reports whether the full body satisfies its schema
 ## Numbers and limits
 
 Numeric constraints preserve their JSON decimal meaning, including integers
-larger than 64 bits. Numeric coefficients are limited to 1024 digits. Absolute decimal scales must
-remain within 1024 before and after normalization; oversized values and extreme
+larger than 64 bits. Numeric coefficients are limited to 1024 digits. Absolute
+decimal scales must remain within 1024 before and after normalization; oversized values and extreme
 exponents are rejected. Numeric JSON text also has a 2100-character lexical limit.
 These checks apply to contracts, explicit values, provider results, validation
 inputs, and minimization candidates.

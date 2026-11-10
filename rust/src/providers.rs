@@ -83,11 +83,11 @@ fn formatted(name: &str, random: &mut impl Rng) -> Result<String> {
         "date-time" => timestamp(random)?.to_rfc3339_opts(SecondsFormat::Secs, true),
         "time" => timestamp(random)?.format("%H:%M:%SZ").to_string(),
         "duration" => format!("P{}D", random.random_range(0..366)),
-        "json-pointer" => "/name".to_owned(),
-        "relative-json-pointer" => "0/name".to_owned(),
-        "uri-template" => "/customers/{id}".to_owned(),
-        "regex" => "[A-Z]+".to_owned(),
-        "color" => "#a0b1c2".to_owned(),
+        "json-pointer" => format!("/field_{}", random.random::<u32>()),
+        "relative-json-pointer" => format!("0/field_{}", random.random::<u32>()),
+        "uri-template" => format!("/customers/{}/{{id}}", random.random::<u32>()),
+        "regex" => format!("[A-Z]{{{}}}", random.random_range(0..33)),
+        "color" => format!("#{:06x}", random.random_range(0..=0xFF_FFFF_u32)),
         _ => return Err(Error::Provider(format!("Unsupported string format: {name}"))),
     })
 }

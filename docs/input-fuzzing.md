@@ -1,24 +1,33 @@
 # Fuzzing Riff's inputs
 
-Riff's self-fuzzing suite exercises exactly three input contracts:
+Riff generates 1,024 documents directly from each of three complete input schemas:
 
-- [JSON Schema](../rust/schemas/json-schema.json): complete official Draft 7,
+- [JSON Schema](../rust/schemas/json-schema.json): the official Draft 7,
   2019-09, and 2020-12 metaschemas, selected by the declared dialect.
-- [OpenAPI](../rust/schemas/openapi.json): complete official OpenAPI 3.0 and 3.1
-  document schemas. Selected body schemas are also checked as JSON Schema.
-- [Sidecars](../rust/schemas/sidecar.json): the complete annotation-file format,
-  including operation selectors, schema pointers, positive/failure sources,
-  provider settings, and recursive strategy combinations.
+- [OpenAPI](../rust/schemas/openapi.json): the official OpenAPI 3.0 and 3.1
+  document schemas.
+- [Sidecars](../rust/schemas/sidecar.json): the complete sidecar format,
+  including selectors, schema pointers, provider settings, and strategies.
 
-Referenced schema resources are included for offline checks. Sampling profiles
-bound candidate sizes and recursion; they do not replace the full input contracts.
-Riff generates the candidate inputs, which must satisfy the full contracts before
-being used in the tested operations.
+Each test loads the full schema, creates a factory, and generates a batch:
 
-The suite checks emitted values against known bounds and selected bodies, verifies
-sidecar overrides and failure targets, and requires known-invalid mutations to be
-rejected. It also checks boolean schemas and unsatisfiable inputs. Runs use fixed
-seeds and finite budgets; they do not establish exhaustive coverage.
+```rust
+let factory = Factory::new(&schema)?;
+let values = factory.generate(&GenerationOptions {
+    count: 1024,
+    seed: Some(42),
+    ..GenerationOptions::default()
+})?;
+```
+
+JSON Schema and OpenAPI generation use no fixture annotations or sidecars.
+Referenced resources are included in the supplied schemas. An independent
+validator checks every generated document against its complete input schema;
+the tests also require varied results.
+
+Metaschema-valid schemas can still be unsatisfiable or refer to resources absent
+from the generated document. This suite tests document generation, with fixed
+seeds and finite budgets. It does not establish exhaustive coverage.
 
 From the repository root:
 
@@ -26,6 +35,7 @@ From the repository root:
 cargo test --locked -p riff-core --test input_fuzz
 ```
 
-The [tests](../rust/tests/input_fuzz.rs) and their sampling profiles live with the
-Rust package. Python and JavaScript tests cover their public interfaces, typed
-models, callbacks, and endpoint examples.
+The [tests](../rust/tests/input_fuzz.rs) live with the Rust package. Separate
+workflow tests cover schema application, selectors, overrides, and declared
+failures. Python and JavaScript tests cover their public interfaces, typed models,
+callbacks, and endpoint examples.

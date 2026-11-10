@@ -11,6 +11,8 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 jsonschema = { version = "0.61", default-features = false, features = ["arbitrary-precision"] }
+referencing = "0.61"
+jsonschema-regex = "0.61"
 rand = "0.9"
 rand_chacha = "0.9"
 rand_regex = "0.18"

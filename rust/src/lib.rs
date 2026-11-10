@@ -1,16 +1,20 @@
 //! Shared schema compilation, generation, mutation, and minimization for Riff.
 mod cases;
 mod cli;
+mod contracts;
 mod documents;
 mod engine;
 mod error;
 mod factory;
 mod limits;
+mod location;
 mod metadata;
 mod minimize;
 mod mutations;
 mod node;
+mod openapi;
 mod providers;
+mod references;
 mod scalars;
 mod schema;
 mod session;

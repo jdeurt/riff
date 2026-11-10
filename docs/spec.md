@@ -61,11 +61,21 @@ with an explicit schema `$schema` taking precedence. Status selection MUST be
 explicit; a missing exact response MUST NOT silently
 select a different status. Path templates are used as written in the document.
 
-Local acyclic JSON Pointer references MUST resolve against the supplied document.
-External references and cycles MUST fail without fetching remote content.
-A reference with sibling keywords is unsupported in this draft; use `allOf`.
-Pointer tokens use RFC 6901 escaping. Annotation data MUST NOT be traversed as
-schema structure.
+References MUST resolve against the supplied document and its embedded schema
+resources. Implementations MUST support local JSON Pointers, resource `$id`
+scoping, relative URI references, and named anchors in their advertised dialects.
+They MUST NOT fetch missing resources. Recursive references MUST use finite
+generation budgets; exhaustion MUST be reported rather than ignoring constraints.
+Draft 2019-09 `$recursiveRef` and 2020-12 `$dynamicRef` MUST retain their dynamic
+scope. A static `$ref` MUST keep its static target even when it names a dynamic
+anchor.
+
+Draft 4 and Draft 7 `$ref` validation ignores sibling keywords. Modern dialects
+apply sibling constraints together with the reference. Fixture annotations remain
+generation instructions. Pointer tokens use RFC 6901 escaping. Annotation data
+MUST NOT be traversed as schema structure. Embedded resources MUST retain their
+declared dialect; inactive keywords and unknown formats MUST NOT become
+constraints through reference resolution.
 
 OpenAPI 3.0 `nullable: true` adds null to an explicit type. It does not override an
 `enum` or other incompatible constraints. Boolean exclusive bounds in 3.0 are
@@ -244,6 +254,11 @@ rejected draw. Failure providers may deliberately return incompatible data.
 `realistic` prefers declared providers and retains explicit examples.
 `boundary` emphasizes small and endpoint values, omissions, nullable alternatives,
 and a string edge corpus. Schema-required formats still apply.
+
+Implementations SHOULD favor smaller nested structures and simpler candidates
+after rejection. These preferences MUST respect schema minimums and the complete
+contract, including when a custom provider returns values beyond the shapes
+explored by ordinary generation.
 
 Profiles are sampling preferences, not validity modes or coverage guarantees.
 An explicit strategy overrides the profile at that node. Native enum and const

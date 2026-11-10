@@ -75,7 +75,7 @@ class FixtureFactory:
         providers: Mapping[str, Provider] | None = None,
         fixture_file: str | Path | None = None,
     ) -> FixtureFactory:
-        """Compile a standalone Draft 7, 2019-09, or 2020-12 schema."""
+        """Compile a standalone Draft 4, Draft 7, 2019-09, or 2020-12 schema."""
         return cls(schema, providers=providers, fixture_file=fixture_file)
 
     @classmethod

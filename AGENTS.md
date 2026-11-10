@@ -26,3 +26,7 @@ testing their interfaces. Keep self-fuzzing and its three input schemas in `rust
 Self-fuzzing has exactly three input contracts: full JSON Schema, full OpenAPI,
 and full sidecar schemas in `rust/schemas/`. Keep their tests in Rust. Do not add
 language-specific dogfooding schemas or top-level conformance fixtures.
+
+Generate self-fuzzing batches directly through the Rust factory from those full
+contracts. Do not add sampling schemas, hand-built input generators, or fixture
+annotations/sidecars to steer JSON Schema or OpenAPI dogfooding.

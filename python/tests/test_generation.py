@@ -167,7 +167,6 @@ def test_parallel_batches_do_not_change_replay() -> None:
     "schema",
     [
         {"$ref": "https://example.test/schema.json"},
-        {"$ref": "#"},
         {"$ref": "#/missing"},
         {"type": "string", "x-fixture": {"provider": "typo"}},
         {"type": "string", "x-fixture": {"examples": [42]}},

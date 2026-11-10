@@ -22,7 +22,7 @@ fn defaults_generate_consumer_ready_localized_records_without_host_generators() 
             "id":{"type":"string","format":"uuid","x-fixture":{"provider":"uuid"}}
         }
     });
-    let factory = Factory::new(&schema, BTreeSet::new())?;
+    let factory = Factory::with_providers(&schema, BTreeSet::new())?;
     let options = GenerationOptions {
         count: 20,
         seed: Some(42),
@@ -32,8 +32,8 @@ fn defaults_generate_consumer_ready_localized_records_without_host_generators() 
     let mut no_host = |_: &riff_core::ProviderContext| {
         Err(Error::Provider("Unexpected host invocation.".to_owned()))
     };
-    let first = factory.generate(&options, &mut no_host)?;
-    assert_eq!(first, factory.generate(&options, &mut no_host)?);
+    let first = factory.generate_with(&options, &mut no_host)?;
+    assert_eq!(first, factory.generate_with(&options, &mut no_host)?);
     for record in first {
         assert!(record.get("name").and_then(Value::as_str).is_some_and(|name| {
             name.chars().any(|character| ('\u{3040}'..='\u{9fff}').contains(&character))
@@ -62,9 +62,9 @@ fn defaults_generate_consumer_ready_localized_records_without_host_generators() 
 fn contract_parser_preserves_numeric_lexemes_and_rejects_ambiguous_yaml() -> Result<()> {
     let schema =
         parse_document("type: integer\nminimum: 9007199254740993\nmaximum: 9007199254740993\n")?;
-    let factory = Factory::new(&schema, BTreeSet::new())?;
+    let factory = Factory::with_providers(&schema, BTreeSet::new())?;
     let options = GenerationOptions::default();
-    let values = factory.generate(&options, &mut |_| {
+    let values = factory.generate_with(&options, &mut |_| {
         Err(Error::Provider("Unexpected host invocation.".to_owned()))
     })?;
     assert_eq!(values, vec![json!(9_007_199_254_740_993_i64)]);

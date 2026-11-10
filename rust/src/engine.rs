@@ -1,5 +1,6 @@
 //! Per-batch random state and bounded candidate generation.
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
 use rand::{Rng, RngCore, SeedableRng};
 use rand_chacha::ChaCha8Rng;
@@ -110,6 +111,8 @@ pub struct Engine<'a, F: FnMut(&ProviderContext) -> Result<Value>> {
     pub random: ChaCha8Rng,
     pub max_attempts: usize,
     profile: Profile,
+    smaller: bool,
+    compiled: BTreeMap<crate::Dialect, HashMap<Value, Node>>,
     remaining: usize,
     names: &'a BTreeSet<String>,
     provider: &'a mut F,
@@ -127,6 +130,8 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             random: ChaCha8Rng::seed_from_u64(seed),
             max_attempts: options.max_attempts,
             profile: options.profile,
+            smaller: false,
+            compiled: BTreeMap::new(),
             remaining: 0,
             names,
             provider,
@@ -136,36 +141,78 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         self.remaining = self.max_attempts * 100;
     }
     pub fn generate(&mut self, node: &Node) -> Result<Value> {
-        self.reset();
-        self.validated(node, 0)
-    }
-    fn spend(&mut self, depth: usize) -> Result<()> {
-        if depth > 32 || self.remaining == 0 {
-            return Err(Error::Generation(
-                "Generation exceeded candidate or depth budget.".to_owned(),
-            ));
-        }
-        self.remaining -= 1;
-        Ok(())
-    }
-    fn validated(&mut self, node: &Node, depth: usize) -> Result<Value> {
+        let mut budget = self.max_attempts * 100;
+        let mut allowance = 128;
         let mut last = String::new();
-        for _ in 0..self.max_attempts {
-            match self.candidate(node, depth) {
-                Ok(candidate)
-                    if scalars::within_limits(&candidate, 0) && node.valid(&candidate) =>
-                {
-                    return Ok(candidate);
-                }
-                Ok(_) => {}
-                Err(Error::Generation(message)) if self.remaining > 0 => last = message,
+        for attempt in 0..self.max_attempts {
+            self.smaller = attempt >= 4;
+            let allocated = allowance.min(budget);
+            self.remaining = allocated;
+            let candidate = self.validated(node, 0);
+            budget -= allocated - self.remaining;
+            match candidate {
+                Ok(value) => return Ok(value),
+                Err(Error::Generation(message)) if budget > 0 => last = message,
                 Err(error) => return Err(error),
             }
+            allowance = allowance.saturating_mul(2).min(budget);
         }
         Err(Error::Generation(format!(
             "No valid fixture after {} attempts: {last}",
             self.max_attempts
         )))
+    }
+    fn spend(&mut self, depth: usize) -> Result<()> {
+        if depth > 32 {
+            return Err(Error::Generation("Generation exceeded depth budget.".to_owned()));
+        }
+        if self.remaining == 0 {
+            return Err(Error::Generation("Generation exceeded candidate-work budget.".to_owned()));
+        }
+        self.remaining -= 1;
+        Ok(())
+    }
+    fn validated(&mut self, node: &Node, depth: usize) -> Result<Value> {
+        if depth > 32 {
+            return Err(Error::Generation("Generation exceeded depth budget.".to_owned()));
+        }
+        if !node.can_sample() {
+            return Err(Error::Generation("The false schema has no valid fixtures.".to_owned()));
+        }
+        let declared = matches!(node, Node::Schema(node) if node.metadata.source.provider.is_some() || node.metadata.source.examples.is_some() || node.metadata.source.strategy.is_some());
+        let attempts = if depth == 0 {
+            1
+        } else if declared {
+            self.max_attempts
+        } else {
+            self.max_attempts.min(8)
+        };
+        let mut last = String::new();
+        for _ in 0..attempts {
+            let candidate = self.candidate(node, depth);
+            match candidate {
+                Ok(candidate)
+                    if scalars::within_limits(&candidate, 0) && node.valid(&candidate) =>
+                {
+                    return Ok(candidate);
+                }
+                Ok(candidate) => {
+                    last = if !scalars::within_limits(&candidate, 0) {
+                        "Candidate exceeds JSON payload resource limits.".to_owned()
+                    } else if let Node::Schema(schema) = node {
+                        schema.validator.iter_errors(&candidate).next().map_or_else(
+                            || "Candidate does not satisfy the schema.".to_owned(),
+                            |error| error.to_string(),
+                        )
+                    } else {
+                        "Candidate does not satisfy the schema.".to_owned()
+                    };
+                }
+                Err(Error::Generation(message)) if self.remaining > 0 => last = message,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(Error::Generation(format!("No valid fixture after {attempts} attempts: {last}")))
     }
     fn candidate(&mut self, node: &Node, depth: usize) -> Result<Value> {
         self.spend(depth)?;
@@ -246,17 +293,17 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             let condition = if positive {
                 condition.clone()
             } else {
-                self.compile(&json!({"not": condition.contract()}), node.dialect)?
+                self.compile(&json!({"not": condition.sampling_schema()}), node.dialect)?
             };
             let branch = if positive { &node.then_schema } else { &node.else_schema };
-            let hint = intersect(&Node::Schema(Box::new(base)), &condition)?;
+            let hint = intersect(&Node::Schema(Arc::new(base)), &condition)?;
             let hint = intersect(&hint, branch.as_ref().unwrap_or(&Node::Boolean(true)))?;
             return self.candidate(&hint, depth + 1);
         }
         if !node.all_of.is_empty() {
             let mut base = node.clone();
             base.all_of.clear();
-            let mut hint = Node::Schema(Box::new(base));
+            let mut hint = Node::Schema(Arc::new(base));
             for branch in &node.all_of {
                 hint = intersect(&hint, branch)?;
             }
@@ -266,7 +313,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             let mut base = node.clone();
             base.any_of.clear();
             base.one_of.clear();
-            let mut hint = Node::Schema(Box::new(base));
+            let mut hint = Node::Schema(Arc::new(base));
             for group in [&node.any_of, &node.one_of] {
                 if !group.is_empty() {
                     hint = intersect(&hint, choose(group, &mut self.random)?)?;
@@ -337,7 +384,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             Strategy::Schema { constraints: ConstraintMode::Respect } => {
                 let mut structural = node.clone();
                 structural.metadata = Metadata::default();
-                self.validated(&Node::Schema(Box::new(structural)), depth + 1)
+                self.validated(&Node::Schema(Arc::new(structural)), depth + 1)
             }
             Strategy::Values { values } => choose(values, &mut self.random).cloned(),
             Strategy::Provider { name, locale, options } => {
@@ -360,8 +407,13 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             }
         }
     }
-    fn compile(&self, value: &Value, dialect: Dialect) -> Result<Node> {
-        Node::compile(value, dialect, &Compilation { names: self.names })
+    fn compile(&mut self, value: &Value, dialect: Dialect) -> Result<Node> {
+        if let Some(node) = self.compiled.get(&dialect).and_then(|schemas| schemas.get(value)) {
+            return Ok(node.clone());
+        }
+        let node = Node::compile(value, dialect, &Compilation { names: self.names })?;
+        let _ = self.compiled.entry(dialect).or_default().insert(value.clone(), node.clone());
+        Ok(node)
     }
     fn invoke(
         &mut self,
@@ -371,20 +423,18 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         options: Map<String, Value>,
         node: &SchemaNode,
     ) -> Result<Value> {
+        let custom = matches!(kind, ProviderKind::Provider) && self.names.contains(name);
         let context = ProviderContext {
             kind,
             name: name.to_owned(),
             seed: self.random.next_u64(),
             locale: locale.to_owned(),
-            schema: node.contract.clone(),
+            schema: if custom { node.declared.render()? } else { node.sampling_schema.clone() },
             options,
         };
-        let value = if matches!(kind, ProviderKind::Provider) && self.names.contains(name) {
-            (self.provider)(&context)
-        } else {
-            crate::providers::generate(&context)
-        }
-        .map_err(|error| Error::Provider(format!("Provider {name} failed: {error}")))?;
+        let value =
+            if custom { (self.provider)(&context) } else { crate::providers::generate(&context) }
+                .map_err(|error| Error::Provider(format!("Provider {name} failed: {error}")))?;
         crate::limits::validate_numbers(&value, 0).map_err(|error| {
             Error::Provider(format!("Provider {name} returned unsupported numeric data: {error}"))
         })?;
@@ -412,7 +462,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         } else {
             node.data.min_contains.unwrap_or(1)
         };
-        let closed = (node.contract.get("items").is_some_and(Value::is_array)
+        let closed = (node.sampling_schema.get("items").is_some_and(Value::is_array)
             && node.additional_items.is_false())
             || (node.applied.items && node.items.is_false())
             || (!node.applied.items
@@ -424,13 +474,17 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         } else {
             node.data.max_items
         };
-        let length = scalars::size(
-            node.data.min_items.max(contains_minimum),
-            maximum,
-            5,
-            self.profile == Profile::Boundary,
-            &mut self.random,
-        )?;
+        let length = if self.smaller {
+            node.data.min_items.max(contains_minimum)
+        } else {
+            scalars::size(
+                node.data.min_items.max(contains_minimum),
+                maximum,
+                5 / (depth + 1),
+                self.profile == Profile::Boundary,
+                &mut self.random,
+            )?
+        };
         let mut values = Vec::new();
         for index in 0..length {
             let mut found = None;
@@ -464,7 +518,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
                 let desired = if too_few {
                     contains.clone()
                 } else {
-                    self.compile(&json!({"not": contains.contract()}), node.dialect)?
+                    self.compile(&json!({"not": contains.sampling_schema()}), node.dialect)?
                 };
                 let replacement =
                     self.validated(&intersect(&node.item(index), &desired)?, depth + 1)?;
@@ -480,7 +534,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
         let mut optional: Vec<_> = node
             .properties
             .iter()
-            .filter(|(name, child)| !selected.contains(*name) && !child.is_false())
+            .filter(|(name, child)| !selected.contains(*name) && child.can_sample())
             .map(|(name, _)| name.clone())
             .collect();
         let extra_allowed = !node.additional.is_false()
@@ -488,15 +542,20 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
                 || node.applied.additional);
         let minimum = node.data.min_properties.max(selected.len());
         let default = minimum.max(
-            node.properties.len() + if extra_allowed || !node.patterns.is_empty() { 2 } else { 0 },
+            node.properties.len().div_ceil(depth + 1)
+                + if extra_allowed || !node.patterns.is_empty() { 2 } else { 0 },
         );
-        let wanted = scalars::size(
-            minimum,
-            node.data.max_properties,
-            default,
-            self.profile == Profile::Boundary,
-            &mut self.random,
-        )?;
+        let wanted = if self.smaller {
+            minimum
+        } else {
+            scalars::size(
+                minimum,
+                node.data.max_properties,
+                default,
+                self.profile == Profile::Boundary,
+                &mut self.random,
+            )?
+        };
         while !optional.is_empty() && selected.len() < wanted {
             let index = self.random.random_range(0..optional.len());
             let _ = selected.insert(optional.remove(index));
@@ -520,7 +579,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
             let mut base = node.clone();
             base.data.required = selected.iter().cloned().collect();
             base.dependencies.retain(|name, _| !triggered.contains(name));
-            let mut hint = Node::Schema(Box::new(base));
+            let mut hint = Node::Schema(Arc::new(base));
             for (name, child) in &node.dependencies {
                 if triggered.contains(name) {
                     hint = intersect(&hint, child)?;
@@ -540,7 +599,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
                 .insert(name.clone(), self.validated(&Self::property(node, &name)?, depth + 1)?);
         }
         if extra_allowed || !node.patterns.is_empty() {
-            for index in 0..self.max_attempts * 100 {
+            for index in 0..self.max_attempts {
                 if values.len() >= wanted {
                     break;
                 }
@@ -550,7 +609,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
                     continue;
                 }
                 let child = Self::property(node, &name)?;
-                if !child.is_false() {
+                if child.can_sample() {
                     let _ = values.insert(name, self.validated(&child, depth + 1)?);
                 }
             }
@@ -587,7 +646,7 @@ impl<'a, F: FnMut(&ProviderContext) -> Result<Value>> Engine<'a, F> {
                 _ => Err(Error::Generation("propertyNames did not produce a string.".to_owned())),
             };
         }
-        Ok(format!("extra_{index}"))
+        Ok(format!("extra_{}", index + node.properties.len()))
     }
 }
 
